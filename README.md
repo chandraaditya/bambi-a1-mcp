@@ -1,51 +1,124 @@
 # Bambi A1 MCP
 
-One stdio MCP for Bambu Lab A1 model slicing, prepared-job inspection, cloud/LAN printing, status, pause and cancel. Uses your installed **Bambu Studio** CLI and the FULU BambuNetwork bridge. It never sends an MCP elicitation request. The client's own tool permissions still apply.
+An open-source MCP server for **Bambu Lab A1** printing. Slice with Bambu Studio, inspect an exact file snapshot, submit a print, and verify that the printer is actually running that job. Works with T3 Code and other clients that launch stdio MCP servers.
 
-This is a focused integration around pinned `bambu-printer-mcp@1.1.51` libraries, rather than a replacement slicer or an official Bambu product. The print transports and file/printer validators come from that project. Cloud authentication, fresh telemetry, job lifecycle and MCP interface are implemented here.
+**Verified on hardware:** signed LAN printing, external PLA spool, A1 / 0.4 mm nozzle / textured PEI, with fresh cloud telemetry independently confirming the job and advancing layers. Bambu Studio slicing is also verified. **Direct Bambu Cloud print submission remains experimental and currently fails on the tested runtime with HTTP 403 / `internal blocking`.** Cloud monitoring works. For reliable remote submission, use a nearby host over SSH; see [remote printing](#remote-printing).
 
-**Current validation status:** Bambu Studio slicing, cloud authentication, fresh cloud telemetry and live preflight work. The live cloud print test reached 100% upload, then Bambu rejected task creation with `-3120`, HTTP `403`, reason `internal blocking`. The printer did not start the test job. Cloud print execution is therefore **not working on the tested bridge/runtime**. The LAN route also remains unverified; see the limitations below.
+No additional MCP elicitation dialog is required. Your MCP client's own tool permissions still apply. The server validates the file, model, nozzle, filament and fresh printer state before dispatch. It does not clear faults or change printer modes.
 
-## Requirements
+## Install
 
-- Node.js 24 or newer.
-- Bambu Studio on the machine that slices, with its matching A1 profiles.
-- The FULU BambuNetwork bridge host and Bambu networking plug-in. The supplied Docker wrapper reuses an installed x86-64 runtime and its CA bundle.
-- A Bambu account session for cloud access, or local printer access for the nearby-host route.
+Requires **Node.js 24+**, **Docker**, **Bambu Studio**, `tar` and `unzip`. The tested host is macOS with Docker's Linux/amd64 support. Linux x86-64 is supported by the wrapper but has not received the same physical acceptance test. Windows users must run inside WSL2. Other Bambu models are not supported by this release.
 
-Start with [setup](#setup-on-another-host), then reload your MCP client to discover the tools. Configuration, account sessions and job artifacts stay outside this repository.
+```sh
+git clone https://github.com/chandraaditya/bambi-a1-mcp.git
+cd bambi-a1-mcp
+npm ci
+npm run install:runtime
+npm run setup
+```
 
-## Use
+The runtime installer downloads **FULU v1.0.0** and **Bambu networking plug-in 02.05.02.58** directly from their publishers, verifies pinned SHA-256 hashes before extraction, and installs them privately outside the repo. A repeated run checks installed file integrity. These binaries are not redistributed in this package; their licenses remain with their publishers. Docker uses a pinned Ubuntu image.
 
-Ask the agent to inspect `diagnose`, choose profiles with `list_profiles`, then prepare a job:
+Setup asks for the printer's LAN address. If Bambu Studio has exactly one saved printer, setup uses its serial and reads its saved LAN access code at runtime. Otherwise pass `--serial`. If Studio has no access code, supply a private local file using `--access-code-file`; do not put the code in a shell argument, Git or chat.
+
+```sh
+npm run setup -- --host PRINTER_ADDRESS --serial PRINTER_SERIAL \
+  --access-code-file /private/path/access-code --country US
+```
+
+Setup defaults to an **A1, 0.4 mm nozzle and textured PEI**; use `--nozzle` and `--bed` to match your printer. Linux installations also need `--slicer /absolute/path/to/BambuStudio`. `--studio-config` and `--runtime` override discovery. `npm run setup -- --help` lists options. Setup refuses to overwrite existing configuration.
+
+For cloud monitoring, sign in to Bambu Studio, then:
+
+```sh
+npm run import:session
+npm run doctor -- --connect --lan --cloud
+```
+
+Without cloud login, run `npm run doctor -- --connect --lan`. These commands do not print. Studio's encrypted session is copied into a separate private directory; Studio's own settings stay intact. Expired sessions require signing in and importing again.
+
+## Connect an MCP client
+
+Setup writes `~/.config/bambi-a1-mcp/mcp-client.json` with the **actual absolute paths** for your machine. Copy its server entry into your MCP client configuration. The generic form is:
 
 ```json
 {
-  "file_path": "/absolute/path/to/model.stl",
-  "process_profile": "/Applications/BambuStudio.app/Contents/Resources/profiles/BBL/process/0.20mm Standard @BBL A1.json",
-  "filament_profiles": ["/Applications/BambuStudio.app/Contents/Resources/profiles/BBL/filament/Bambu PLA Basic @BBL A1.json"]
+  "mcpServers": {
+    "bambi-a1": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/bambi-a1-mcp/src/server.mjs"]
+    }
+  }
 }
 ```
 
-Call `prepare_job` with those arguments. It invokes Bambu Studio, exports a sliced 3MF and inspects it for the configured A1, nozzle and plate. Profile inheritance is resolved by the upstream slicer library. STL inputs need explicit filament and process profiles. An already sliced 3MF needs only `file_path`; an unsliced 3MF needs `slice: true`.
+For T3's Codex harness (registration helper requires Python 3.11+):
 
-Then call `print_job`:
-
-```json
-{ "job_id": "ID_RETURNED_BY_PREPARE_JOB", "route": "cloud" }
+```sh
+python3 scripts/install-codex.py --node /absolute/path/to/node
 ```
 
-Omitting `ams_mapping` selects a single external spool. For AMS Lite, map **every project filament position** to a zero-based physical slot, e.g. `"ams_mapping": [0, 2]`. Unused project positions may be `-1`. An A1 with no AMS rejects an AMS-mapped job. Filament type is checked against live inventory; visually confirm the actual spool and clear bed before instructing a print.
+This backs up Codex's configuration, registers this checkout and disables the two known duplicate Bambu MCP entries. Reload the T3 session afterward. Other clients can use the generated JSON entry. `BAMBI_CONFIG` selects a different private configuration file.
 
-Plate indices in MCP calls are **zero based**. The bridge converts them to the plug-in's one-based plate index. Job files are copied into a private directory and bound to a SHA-256 hash. Repeating a job ID returns its recorded state instead of printing it again. To intentionally print another copy, prepare another job.
+The package also exposes `bambi-a1-mcp`, `bambi`, `bambi-setup` and `bambi-install-runtime` executable entry points when installed using npm from GitHub or a release tarball. It is not currently published to the npm registry.
 
-`printer_status` takes `{"route":"cloud"}` or `{"route":"lan"}`. `control_print` takes a route and `"action":"pause"` or `"action":"cancel"`. Neither requests another approval dialog. Faults fail with an error; the server never asks the harness to approve fault clearing.
+## Print workflow
 
-## Remote access options
+1. **Prepare:** `prepare_job` copies the source, optionally slices it, and inspects a read-only snapshot bound to a SHA-256 hash. It never prints.
+2. **Submit once:** `print_job` takes the prepared ID and an explicit route. It validates fresh telemetry immediately before dispatch.
+3. **Verify:** `verify_job` checks fresh telemetry against the exact expected job name and saves observed progress. Layer 0 means preparation; advancing layers establish printing. A previous completed job is never treated as this job's success.
 
-**Bambu Cloud:** run this MCP and Bambu Studio on the Mac you are using, choose `route: cloud`, and leave the printer bound to your Bambu account with internet access. Cloud status, preflight and dispatch use the authenticated networking plug-in. They do not require a LAN socket to the printer. Files upload through the plug-in's cloud print method.
+For an already sliced 3MF, the MCP arguments are:
 
-**Nearby host:** run this MCP on an always-on Mac or compatible Linux host near the printer, choose `route: lan`, and connect T3 to it over SSH stdio or a private VPN. Bambu Studio must be on the host that slices. With SSH stdio, model paths refer to that host: transfer the model there first using your usual file-transfer tool. Example MCP configuration:
+```json
+{"file_path":"/absolute/path/part.3mf","plate_index":0}
+```
+
+Then:
+
+```json
+{"job_id":"ID_FROM_PREPARE_JOB","route":"lan"}
+```
+
+The same job ID can be verified through `route: "cloud"`, even though submission used LAN. A missing/unavailable matching report never triggers another submission. Repeating a submitted job ID returns its stored state. To intentionally print another copy, prepare a new job **after checking the printer and clearing the bed**.
+
+Omit `ams_mapping` for one external spool. For AMS Lite, map every project filament position to a physical slot: `"ams_mapping": [0, 2]`. Slots are zero based; `-1` is allowed only for unused project positions. Multi-material external-spool jobs are refused. Plate indices are also zero based.
+
+Filament type is validated against printer telemetry. The operator must confirm the actual spool and clear build plate before instructing a print; telemetry cannot establish those physical facts.
+
+### Bambu Studio slicing
+
+An STL needs explicit process and filament profiles. Use `list_profiles` to find your installed profiles, then:
+
+```json
+{
+  "file_path":"/absolute/path/model.stl",
+  "process_profile":"/absolute/path/0.20mm Standard @BBL A1.json",
+  "filament_profiles":["/absolute/path/Bambu PLA Basic @BBL A1.json"]
+}
+```
+
+For an unsliced 3MF, also set `slice: true`. A prepared, sliced 3MF is used unchanged unless slicing was explicitly requested. `profilesRoot` can point `list_profiles` to an extracted Linux BBL profile directory. The configured slicer must contain matching A1 presets.
+
+### Command-line use
+
+The CLI calls the same MCP tools, without an elicitation-capable client:
+
+```sh
+npm run bambi -- prepare /absolute/path/part.3mf
+npm run bambi -- print JOB_ID --route lan
+npm run bambi -- verify JOB_ID --route cloud
+npm run bambi -- watch JOB_ID --route cloud
+```
+
+`watch` only verifies, at 30-second intervals by default; it stops on matching completion/failure or its 12-hour timeout. It never prints or retries. `status`, `job` and `doctor` are also available. Run `npm run bambi -- --help` for options.
+
+The nine MCP tools are `diagnose`, `list_printers`, `printer_status`, `list_profiles`, `prepare_job`, `get_job`, `print_job`, `verify_job` and `control_print`. Controls are pause and cancel.
+
+## Remote printing
+
+**Verified submission mechanism: a nearby host.** Leave an installed Mac or compatible Linux x86-64 host on the printer's LAN. Connect your remote MCP client using SSH stdio through your existing SSH/VPN setup:
 
 ```toml
 [mcp_servers.bambi-a1]
@@ -55,29 +128,23 @@ startup_timeout_sec = 30
 tool_timeout_sec = 600
 ```
 
-The default LAN route uses the networking plug-in's certificate exchange and signed local session. `"lanTelemetry":"mqtt"` optionally uses direct MQTT for telemetry on firmware/settings that permit it. No printer mode is changed automatically. A Raspberry Pi needs a compatible x86-64 bridge environment; the supplied Docker wrapper does not install CPU emulation or an ARM plug-in.
+Transfer your model to that host first; paths in tool calls refer to the host running the server. Use `route: lan` there. Slicing also runs there, so Bambu Studio must be installed there. SSH/VPN access is configured by the operator; setup does not enable remote login or expose ports. The LAN printing mechanism is physically verified; an off-site SSH deployment has not been independently tested in this release.
 
-## Setup on another host
+The Docker runtime is x86-64. A Raspberry Pi requires a separately configured compatible emulation environment and has not been tested; do not assume a native ARM plug-in exists. Apple Silicon works through Docker's amd64 support in the tested setup.
 
-1. Install Node.js 24+, Bambu Studio and its networking plug-in. Run `npm ci`. The pinned upstream dependency installs its required `bambu-node` compatibility patch.
-2. Copy [examples/config.json](examples/config.json) to `~/.config/bambi-a1-mcp/config.json`, set actual absolute paths and restrict its permissions to `600`. Set the printer's real nozzle size and plate. `BAMBI_CONFIG` can select another config file.
-3. Install the [FULU bridge runtime](https://github.com/DMontgomery40/bambu-printer-mcp/blob/main/docs/FULU.md). `bridgeRuntimeDir` must contain `pjarczak_bambu_linux_host`, its networking libraries and `ca-certificates.crt`. The Docker wrapper reuses an installed runtime; it does not download proprietary binaries. The job directory must be visible inside the bridge guest.
-4. Sign in to Studio, then run `node scripts/import-studio-session.mjs`. This copies the encrypted session into this MCP's separate configuration directory. It does not edit Studio's configuration.
-5. Run `node scripts/doctor.mjs --connect --cloud`, and `--lan` on the nearby network. This reads state; it does not print.
-6. Register the stdio server. On Codex, `python3 scripts/install-codex.py --node /absolute/path/to/node` saves a private backup and disables the two known duplicate Bambu entries. Other MCP clients can launch `node /absolute/path/to/src/server.mjs` directly.
+**Bambu Cloud:** cloud authentication, discovery, fresh status and verification work without LAN sockets. Direct file submission uses `net.start_print`, but the tested service rejected task creation after upload. Neither replacing `connection_type: "cloud"` with an empty value nor a successful upload established printing. The exact vendor rejection rule is unknown. The cloud route is retained for diagnosis and future compatibility work; it never silently falls back to LAN. Do not rely on it for print submission yet.
 
-If Studio session import is unavailable, `node scripts/cloud-login.mjs` prints Bambu's hosted sign-in URL. Supply the resulting localhost callback URL via `--callback-file /private/file`; do not put tickets or tokens in chat, command-line arguments or the repository. The script exchanges the ticket with the networking plug-in and stores credentials in a private file. This fallback is unit-tested but has not been exercised with a fresh live login here. Expired/revoked sessions require signing in again.
+## Reliability and limits
 
-The MCP is local stdio. There is no unauthenticated network listener and no printer port forwarding.
+- Job files, credentials, encrypted sessions and diagnostics live outside the package in private directories.
+- Durable job records and a shared-directory operation lock prevent duplicate dispatch by this server across repeats/restarts. This is not a printer-wide lock across other slicers.
+- A timeout after dispatch is recorded as `unknown`, never automatically retried. `verify_job` can resolve it from a matching live job.
+- The networking library can retry its specific local **publish-failed** error once, with a fresh preflight. There is no generic print retry or automatic transport fallback.
+- Faults are reported, not cleared. A crash can leave a lock; inspect the live printer and process before removing it.
+- The current live test established actual printing, not completed-part quality. The printer raised a Y-axis resonance/possible loose-belt HMS entry during preparation; this was surfaced and left intact.
+- LAN reachability was intermittent during the live test: after printing started, new connections to port 8883 timed out from both macOS and Docker while FTPS 990 remained reachable. Cloud monitoring continued. `diagnose` with `connect_bridge: true` reports separate host TCP probes; a reachable port alone does not prove protocol authorization. This network/firmware cause remains unresolved.
+- Cloud service changes, firmware changes and expired sessions can still require maintenance. Pinned dependencies make the tested setup reproducible, not permanently immune to vendor changes.
 
-## Verified and remaining
+Run `npm test` for offline tests. They cover MCP without elicitation, file/printer checks, exact job verification, ambiguous dispatch, idempotency, private setup and transport behavior. See [diagnosis](docs/diagnosis.md) and [live acceptance evidence](docs/acceptance.md). Contributions should preserve those guarantees and distinguish simulated tests from actual printer evidence.
 
-- Tests cover MCP initialization without elicitation, input validation, identity/nozzle/state checks, stale telemetry rejection, file mutation, job idempotency, ambiguous dispatch, cloud subscription order and transport separation.
-- A real 10 × 10 × 5 mm STL was sliced by the installed Bambu Studio with A1/0.4 mm/PLA profiles. Its resulting 3MF passed file inspection.
-- The existing account's A1 was discovered through the cloud. Fresh cloud telemetry showed `FINISH`, no print error and no HMS entries. The real sliced job passed live cloud preflight, including nozzle and external PLA checks.
-- Both direct MQTT and signed bridge LAN reads timed out at the configured address on this Mac. The address is on a directly connected subnet. The cause is not yet established; local reachability/firmware authorization needs an on-site check. No printer settings were changed.
-- **The live cloud print acceptance test failed.** An unchanged, inspected, previously approved A1 sliced file uploaded successfully. Task creation returned `-3120`, HTTP `403`, reason `internal blocking`. Independent fresh telemetry continued to show the previous completed job with heater targets zero and no print errors. No test print start was observed. Failed/uncertain jobs are retained and never replayed automatically. A successful supervised print remains outstanding.
-- Status includes the reported job name so a submitted job can be distinguished from a previous one. Plug-in failures retain private callback diagnostics and expose the numeric error, HTTP status and known short reason; raw API bodies and request identifiers stay private.
-- Cloud functionality depends on Bambu's service and the installed third-party bridge/plug-in ABI. Versions are pinned; future vendor changes can require an update. No promise of a supported vendor API is implied.
-
-Run `npm test` for offline tests. Run `node scripts/doctor.mjs --cloud` for read-only live cloud checks. See [diagnosis](docs/diagnosis.md) for the original failures and configuration recovery.
+GPL-2.0-only. Built on pinned `bambu-printer-mcp` libraries; see [third-party notices](THIRD_PARTY_NOTICES.md). Independent project, unaffiliated with Bambu Lab.

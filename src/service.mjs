@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { privateJson } from './config.mjs';
+import { privateJson, publicStatus } from './config.mjs';
 import { bridgeAmsMapping2Entry } from 'bambu-printer-mcp/dist/ams-mapping.js';
 import { resolveStudioPrintOptions } from 'bambu-printer-mcp/dist/studio-print-options.js';
 
@@ -20,6 +20,8 @@ function dispatchFailure(result) {
 }
 const publicJob = job => ({ job_id: job.id, state: job.state, file: job.file, sha256: job.sha256,
   plate_index: job.plateIndex, inspection: job.inspection, route: job.route, error: job.lastError,
+  printer_job_name: job.printerJobName || (job.route ? `bambi_${job.id}` : undefined),
+  last_observation: job.lastObservation, started_at: job.startedAt, completed_at: job.completedAt,
   note: job.state === 'dispatching' || job.state === 'unknown' ? 'Dispatch may have reached the printer. Check status before creating another job.' : undefined });
 
 export class PrintService {
@@ -34,6 +36,44 @@ export class PrintService {
   read(id) { return JSON.parse(fs.readFileSync(this.jobFile(id), 'utf8')); }
   save(job) { privateJson(this.jobFile(job.id), job); }
   get(id) { return publicJob(this.read(id)); }
+
+  acquireLock() {
+    const lock = path.join(this.config.workDir, '.printer-operation');
+    try { fs.mkdirSync(lock); } catch (error) {
+      if (error.code === 'EEXIST') throw new Error('Another printer operation owns the lock. If its process crashed, inspect printer_status before removing the lock.');
+      throw error;
+    }
+    return () => fs.rmdirSync(lock);
+  }
+
+  async verify({ job_id, route }) {
+    const release = this.acquireLock();
+    try {
+      const job = this.read(job_id);
+      if (job.state === 'prepared') return { ...publicJob(job), matched: false, note: 'This job has not been submitted.' };
+      route = route || job.route;
+      routeCheck(route);
+      const status = publicStatus(await this.runtime.status(route));
+      const expected = job.printerJobName || `bambi_${job.id}`;
+      // Exact job identity, allowing only the file suffix used by the plug-in.
+      // A previous job at 100% is never evidence that this job completed.
+      const matched = [expected, `${expected}.3mf`, `${expected}.gcode.3mf`].includes(status.jobName);
+      job.lastObservation = { ...status, route, matched };
+      if (matched) {
+        const state = { RUNNING: Number(status.layer) > 0 ? 'printing' : 'preparing',
+          PREPARE: 'preparing', PAUSE: 'paused', FINISH: 'completed', FAILED: 'failed' }[status.state];
+        if (state) {
+          job.state = state;
+          job.startedAt ||= new Date(status.observedAt).toISOString();
+          if (state === 'completed') job.completedAt ||= new Date(status.observedAt).toISOString();
+        }
+      }
+      this.save(job);
+      return { ...publicJob(job), matched, note: matched
+        ? 'Fresh printer telemetry matches this job. Layer 0 is preparation; positive layers confirm printing progress.'
+        : 'The printer reports a different job. This does not establish failure or authorize a retry.' };
+    } finally { release(); }
+  }
 
   async prepare({ file_path, plate_index = 0, slice = false, process_profile, filament_profiles, process_overrides }) {
     if (!Number.isInteger(plate_index) || plate_index < 0) throw new Error('plate_index must be a nonnegative integer (zero based).');
@@ -68,11 +108,7 @@ export class PrintService {
 
   async print({ job_id, route, ams_mapping }) {
     routeCheck(route);
-    const lock = path.join(this.config.workDir, '.printer-operation');
-    try { fs.mkdirSync(lock); } catch (error) {
-      if (error.code === 'EEXIST') throw new Error('Another printer operation owns the lock. If its process crashed, inspect printer_status before removing the lock.');
-      throw error;
-    }
+    const release = this.acquireLock();
     let job, dispatched = false;
     try {
       job = this.read(job_id);
@@ -94,9 +130,9 @@ export class PrintService {
         this.runtime.validate(status, requirements);
       };
       await preflight();
-      job = { ...job, state: 'dispatching', route, amsMapping: mapping };
+      job = { ...job, state: 'dispatching', route, amsMapping: mapping, printerJobName: `bambi_${job.id}` };
       this.save(job);
-      const name = `bambi_${job.id}`;
+      const name = job.printerJobName;
       const calibration = resolveStudioPrintOptions('a1', { bedLeveling: true, flowCalibration: true });
       const params = {
         dev_id: this.config.serial, task_name: name, project_name: name, preset_name: name,
@@ -125,7 +161,7 @@ export class PrintService {
       }
       if (dispatched) throw new Error('Print dispatch outcome is unknown; it will not be automatically retried. Read printer_status and inspect the printer before creating another job. Underlying error: ' + error.message);
       throw error;
-    } finally { fs.rmSync(lock, { recursive: true, force: true }); }
+    } finally { release(); }
   }
 
   async control({ route, action }) {

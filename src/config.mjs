@@ -1,8 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { hmsCode } from 'bambu-printer-mcp/dist/safety/printer-state.js';
+import { HMS_MESSAGES } from 'bambu-printer-mcp/dist/safety/hms-messages.js';
 
 export const configHome = () => path.join(os.homedir(), '.config', 'bambi-a1-mcp');
+export const defaultStudioConfig = () => path.join(os.homedir(), process.platform === 'darwin'
+  ? 'Library/Application Support/BambuStudio/BambuStudio.conf' : '.config/BambuStudio/BambuStudio.conf');
 
 export function readConfig(env = process.env) {
   const file = env.BAMBI_CONFIG || path.join(configHome(), 'config.json');
@@ -23,7 +27,7 @@ export function readConfig(env = process.env) {
   if (![0.2, 0.4, 0.6, 0.8].includes(config.nozzle)) throw new Error('Invalid configured nozzle diameter.');
   if (!['us', 'cn'].includes(config.region)) throw new Error('region must be us (global) or cn.');
   // Read the LAN code from Studio each time, so a code change needs no launcher edit.
-  const studio = config.studioConfig || path.join(os.homedir(), 'Library', 'Application Support', 'BambuStudio', 'BambuStudio.conf');
+  const studio = config.studioConfig || defaultStudioConfig();
   if (!config.accessCode && config.serial && fs.existsSync(studio)) {
     config.accessCode = JSON.parse(fs.readFileSync(studio, 'utf8')).access_code?.[config.serial];
   }
@@ -65,5 +69,9 @@ export function publicStatus(status) {
     ams: raw.ams?.ams?.map(unit => ({ id: unit.id, slots: unit.tray?.map(tray => ({ id: tray.id,
       material: tray.tray_type, color: tray.tray_color })) })),
     externalFilament: raw.vt_tray ? { material: raw.vt_tray.tray_type, color: raw.vt_tray.tray_color } : undefined,
-    printError: raw.print_error, hms: raw.hms, observedAt: status.observation.receivedAt };
+    printError: raw.print_error, hms: raw.hms?.map(entry => {
+      const parsed = hmsCode(entry), description = HMS_MESSAGES[parsed?.hex];
+      const message = typeof description === 'string' ? description : description?.[status.serial?.slice(0, 3)] ?? description?.['*'];
+      return { ...entry, hex: parsed?.hex, message };
+    }), observedAt: status.observation.receivedAt };
 }

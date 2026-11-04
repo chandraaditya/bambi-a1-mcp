@@ -16,7 +16,7 @@ test('real stdio protocol works without elicitation and validates tool arguments
   t.after(async () => { await client.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   await client.connect(transport);
   const result = await client.listTools();
-  assert.equal(result.tools.length, 8);
+  assert.equal(result.tools.length, 9);
   const diagnosis = await client.callTool({ name: 'diagnose', arguments: {} });
   assert.equal(diagnosis.isError, undefined);
   const invalid = await client.callTool({ name: 'print_job', arguments: { job_id: 'test', route: 'unexpected' } });

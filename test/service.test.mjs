@@ -102,3 +102,49 @@ test('an unsliced or incompatible file fails inspection before a job is saved', 
   await assert.rejects(service.prepare({ file_path: file }), /not sliced/);
   assert.deepEqual(fs.readdirSync(config.workDir), []);
 });
+
+
+test('verification requires an exact job name, distinguishes preparation from layers, and survives restart', async t => {
+  let raw;
+  const { service, runtime, file, config, calls } = fixture(t);
+  const job = await service.prepare({ file_path: file });
+  await service.print({ job_id: job.job_id, route: 'lan' });
+  runtime.status = async route => { calls.push(['verify-status', route]); return {
+    model: 'a1', status: raw.gcode_state, raw, observation: { receivedAt: Date.now() },
+  }; };
+  raw = { gcode_state: 'FINISH', subtask_name: 'previous-job', mc_percent: 100, layer_num: 100 };
+  let result = await service.verify({ job_id: job.job_id, route: 'cloud' });
+  assert.equal(result.matched, false); assert.equal(result.state, 'command_sent');
+  raw = { ...raw, gcode_state: 'RUNNING', subtask_name: `bambi_${job.job_id}`, mc_percent: 0, layer_num: 0 };
+  result = await service.verify({ job_id: job.job_id, route: 'cloud' });
+  assert.equal(result.state, 'preparing'); assert.ok(result.started_at);
+  raw.layer_num = 1;
+  result = await service.verify({ job_id: job.job_id, route: 'cloud' });
+  assert.equal(result.state, 'printing');
+  const restarted = new PrintService(config, runtime);
+  assert.equal(restarted.get(job.job_id).last_observation.layer, 1);
+  await restarted.print({ job_id: job.job_id, route: 'lan' });
+  assert.equal(calls.filter(c => c[0] === 'dispatch').length, 1);
+  raw.gcode_state = 'FINISH'; raw.mc_percent = 100;
+  result = await restarted.verify({ job_id: job.job_id, route: 'cloud' });
+  assert.equal(result.state, 'completed'); assert.ok(result.completed_at);
+});
+
+test('verification cannot race dispatch and does not query or mark an unsubmitted job', async t => {
+  const { service, file, config, calls } = fixture(t);
+  const job = await service.prepare({ file_path: file });
+  const result = await service.verify({ job_id: job.job_id, route: 'cloud' });
+  assert.equal(result.state, 'prepared'); assert.equal(result.matched, false); assert.equal(calls.length, 0);
+  fs.mkdirSync(path.join(config.workDir, '.printer-operation'));
+  await assert.rejects(service.verify({ job_id: job.job_id }), /owns the lock/);
+});
+
+test('verification failure preserves the non-replayable submitted record and releases the lock', async t => {
+  const { service, runtime, file, config } = fixture(t);
+  const job = await service.prepare({ file_path: file });
+  await service.print({ job_id: job.job_id, route: 'lan' });
+  runtime.status = async () => { throw new Error('offline'); };
+  await assert.rejects(service.verify({ job_id: job.job_id }), /offline/);
+  assert.equal(service.get(job.job_id).state, 'command_sent');
+  assert.equal(fs.existsSync(path.join(config.workDir, '.printer-operation')), false);
+});

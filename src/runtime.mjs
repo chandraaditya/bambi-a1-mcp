@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import net from 'node:net';
 import { BambuNetworkBridge } from 'bambu-printer-mcp/dist/bambu-network-bridge.js';
 import { STLManipulator } from 'bambu-printer-mcp/dist/stl/stl-manipulator.js';
 import { inspectPrintFile } from 'bambu-printer-mcp/dist/safety/print-file.js';
@@ -6,6 +7,17 @@ import { validatePrinterState } from 'bambu-printer-mcp/dist/safety/printer-stat
 import { credentials } from './config.mjs';
 import { freshMqttStatus, withLanMqtt } from './telemetry.mjs';
 import { CloudBridge, freshBridgeStatus, checked } from './cloud-bridge.mjs';
+
+function tcpProbe(host, port) {
+  return new Promise(resolve => {
+    const socket = net.createConnection({ host, port });
+    let settled = false;
+    const finish = result => { if (settled) return; settled = true; socket.destroy(); resolve(result); };
+    socket.setTimeout(2500, () => finish({ reachable: false, error: 'TIMEOUT' }));
+    socket.once('connect', () => finish({ reachable: true }));
+    socket.once('error', error => finish({ reachable: false, error: error.code || 'CONNECTION_FAILED' }));
+  });
+}
 
 export function createRuntime(config) {
   const bridge = new BambuNetworkBridge();
@@ -76,7 +88,7 @@ export function createRuntime(config) {
         beforeDispatch: async method => { if (method === 'net.start_local_print') await beforeDispatch(await localStatus()); },
         onDispatched: method => { if (method === 'net.start_local_print') onDispatched(); },
       }, () => {}, localTiming);
-      return result.result;
+      return { ...result.result, diagnostics: result.jobUpdates };
     },
     async control(route, command) {
       if (route === 'cloud') {
@@ -104,6 +116,11 @@ export function createRuntime(config) {
         output.bridgeReady = true;
         output.bridgeVersion = probe.handshake?.bridge_version;
         output.bridgePluginVersion = probe.handshake?.network_actual_abi_version;
+      }
+      if (connect && config.host) {
+        const [mqtt, ftps] = await Promise.all([tcpProbe(config.host, 8883), tcpProbe(config.host, 990)]);
+        output.lanTcp = { mqtt8883: mqtt, ftps990: ftps };
+        output.lanTcpNote = 'Host TCP reachability only; this does not establish MQTT authentication or print readiness.';
       }
       return output;
     },

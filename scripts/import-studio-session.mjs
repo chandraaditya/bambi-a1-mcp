@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { readConfig } from '../src/config.mjs';
+import { readConfig, defaultStudioConfig } from '../src/config.mjs';
 
 const config = readConfig();
-const studio = config.studioConfig || path.join(process.env.HOME, 'Library/Application Support/BambuStudio/BambuStudio.conf');
+const studio = config.studioConfig || defaultStudioConfig();
 const source = path.join(path.dirname(studio), 'BambuNetworkEngine.conf');
 if (!config.bridgeConfigDir) throw new Error('Configure bridgeConfigDir first.');
 if (!fs.existsSync(source)) throw new Error('No Bambu Studio session found. Sign in to Studio on this host first.');

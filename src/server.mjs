@@ -2,7 +2,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { readConfig, redact, publicStatus } from './config.mjs';
+import { readConfig, redact, publicStatus, defaultStudioConfig } from './config.mjs';
 import { createRuntime } from './runtime.mjs';
 import { PrintService } from './service.mjs';
 import fs from 'node:fs';
@@ -30,6 +30,8 @@ const tools = [
       process_overrides: schema({ layer_height: { type: 'number', minimum: 0.04, maximum: 0.6 }, wall_loops: { type: 'integer', minimum: 1, maximum: 20 }, sparse_infill_density: { type: 'string', pattern: '^(100|[0-9]{1,2})%$' } }),
     }, ['file_path']) },
   { name: 'get_job', description: 'Inspect the durable job record and exact prepared file hash.', inputSchema: schema({ job_id: string }, ['job_id']), annotations: { readOnlyHint: true } },
+  { name: 'verify_job', description: 'Verify a submitted job against fresh printer telemetry and save its observed progress. Exact job-name match required. Layer 0 is preparation. Never submits or retries a print. Optional route overrides the submission route, allowing cloud monitoring of a LAN print.',
+    inputSchema: schema({ job_id: string, route }, ['job_id']), annotations: { readOnlyHint: true, idempotentHint: true } },
   { name: 'print_job', description: 'Print an explicitly prepared job using LAN or cloud with fresh printer checks. Direct execution; no MCP elicitation. Repeated job IDs are not dispatched twice. Optional ams_mapping uses zero-based AMS Lite slots; omit for one external spool.',
     inputSchema: schema({ job_id: string, route, ams_mapping: { type: 'array', minItems: 1, items: { type: 'integer', minimum: -1, maximum: 3 } } }, ['job_id', 'route']), annotations: { destructiveHint: true, idempotentHint: true } },
   { name: 'control_print', description: 'Pause or cancel a print using the chosen transport. No MCP elicitation.',
@@ -39,9 +41,9 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 const validators = new Map(tools.map(tool => [tool.name, ajv.compile(tool.inputSchema)]));
 
 function profiles(search = '') {
-  const roots = [path.resolve(path.dirname(config.slicerPath), '../Resources/profiles/BBL'),
-    path.join(path.dirname(config.studioConfig || path.join(process.env.HOME, 'Library/Application Support/BambuStudio/BambuStudio.conf')), 'system/BBL'),
-    path.join(path.dirname(config.studioConfig || path.join(process.env.HOME, 'Library/Application Support/BambuStudio/BambuStudio.conf')), 'user')];
+  const roots = [config.profilesRoot || path.resolve(path.dirname(config.slicerPath), '../Resources/profiles/BBL'),
+    path.join(path.dirname(config.studioConfig || defaultStudioConfig()), 'system/BBL'),
+    path.join(path.dirname(config.studioConfig || defaultStudioConfig()), 'user')];
   const output = [];
   function walk(directory) {
     if (!fs.existsSync(directory)) return;
@@ -54,7 +56,7 @@ function profiles(search = '') {
   for (const root of new Set(roots)) walk(root);
   return { paths: output.slice(0, 200), total: output.length, note: output.length > 200 ? 'Use a narrower search.' : undefined };
 }
-const server = new Server({ name: 'bambi-a1-mcp', version: '0.1.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 async function executeTool(request) {
   const a = request.params.arguments || {};
@@ -73,6 +75,7 @@ async function executeTool(request) {
       case 'list_profiles': result = profiles(a.search); break;
       case 'prepare_job': result = await service.prepare(a); break;
       case 'get_job': result = service.get(a.job_id); break;
+      case 'verify_job': result = await service.verify(a); break;
       case 'print_job': result = await service.print(a); break;
       case 'control_print': result = await service.control(a); break;
       default: throw new Error('Unknown tool.');

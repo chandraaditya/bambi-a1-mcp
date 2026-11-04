@@ -1,19 +1,30 @@
 {
   "name": "bambi-a1-mcp",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "type": "module",
-  "description": "Bambu A1 slicing and LAN/cloud printing without MCP elicitation",
+  "description": "Bambu A1 MCP: Bambu Studio slicing, verified LAN printing and cloud monitoring",
   "license": "GPL-2.0-only",
+  "repository": { "type": "git", "url": "https://github.com/chandraaditya/bambi-a1-mcp.git" },
+  "homepage": "https://github.com/chandraaditya/bambi-a1-mcp#readme",
+  "bugs": "https://github.com/chandraaditya/bambi-a1-mcp/issues",
+  "files": ["src", "scripts", "examples", "docs", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+  "os": ["darwin", "linux"],
   "engines": {
     "node": ">=24"
   },
   "bin": {
-    "bambi-a1-mcp": "src/server.mjs"
+    "bambi-a1-mcp": "src/server.mjs",
+    "bambi": "scripts/bambi.mjs",
+    "bambi-setup": "scripts/setup.mjs",
+    "bambi-install-runtime": "scripts/install-runtime.mjs"
   },
   "scripts": {
     "start": "node src/server.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "bambi": "node scripts/bambi.mjs",
+    "setup": "node scripts/setup.mjs",
+    "install:runtime": "node scripts/install-runtime.mjs",
+    "import:session": "node scripts/import-studio-session.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

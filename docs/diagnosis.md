@@ -2,6 +2,8 @@
 
 The original workspace was empty. Two Bambu MCP installations were already configured in both Codex and Claude: upstream `bambu-printer-mcp` 1.1.51 and a separate ceweldy fork. This work changed only the Codex registrations and added a separate integration/configuration.
 
+**Later live result:** the signed LAN route successfully submitted the unchanged approved file, and independent cloud telemetry verified the matching job with advancing layers. LAN timeouts later recurred, isolated to new TCP connections on port 8883 from both macOS and Docker while FTPS 990 stayed reachable; their cause remains unknown. The cloud task-creation failure still reproduces, including with an empty `connection_type`. See [acceptance evidence](acceptance.md). The reusable supported submission path is LAN from the local/nearby host; cloud monitoring works.
+
 ## Confirmed causes
 
 1. **Server-side elicitation is separate from harness access.** The upstream launchers did not set `BAMBU_REQUIRE_CONFIRMATION=0`. Upstream's `confirmHardwareAction` consequently calls `server.elicitInput` for print starts. Full filesystem/network access does not implement the client's elicitation UI. Upstream documents its headless opt-out, but some physical-fault paths still require elicitation even with that opt-out. This MCP has no elicitation calls; reported faults return errors.
@@ -15,7 +17,7 @@ The ceweldy fork lacks the main upstream's current confirmation implementation, 
 
 ## Chosen implementation
 
-The server exposes eight focused tools. There is no shell-execution or raw networking-bridge tool. Inputs are schema-validated. Tools are serialized because the bridge has a shared event queue. The printer route is explicit; cloud never falls back to LAN and LAN never silently falls back to cloud.
+The server exposes nine focused tools. There is no shell-execution or raw networking-bridge tool. Inputs are schema-validated. Tools are serialized because the bridge has a shared event queue. The printer route is explicit; cloud never falls back to LAN and LAN never silently falls back to cloud.
 
 Each prepared job has its own directory and file snapshot. Dispatch records are saved before the bridge receives a print call. A process restart or repeat call cannot replay a dispatched job. A timeout after handing the request to the bridge leaves an `unknown` record and requires inspection before another job is created. A global operation lock prevents simultaneous print dispatch from processes sharing this job directory. A crashed process may leave the lock; inspect the printer and process state before removing it. This is not a printer-wide lock across unrelated clients.
 
