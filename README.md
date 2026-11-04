@@ -4,6 +4,8 @@ One stdio MCP for Bambu Lab A1 model slicing, prepared-job inspection, cloud/LAN
 
 This is a focused integration around pinned `bambu-printer-mcp@1.1.51` libraries, rather than a replacement slicer or an official Bambu product. The print transports and file/printer validators come from that project. Cloud authentication, fresh telemetry, job lifecycle and MCP interface are implemented here.
 
+**Current validation status:** Bambu Studio slicing, cloud authentication, fresh cloud telemetry and live preflight work. The live cloud print test reached 100% upload, then Bambu rejected task creation with `-3120`, HTTP `403`, reason `internal blocking`. The printer did not start the test job. Cloud print execution is therefore **not working on the tested bridge/runtime**. The LAN route also remains unverified; see the limitations below.
+
 ## Requirements
 
 - Node.js 24 or newer.
@@ -74,7 +76,8 @@ The MCP is local stdio. There is no unauthenticated network listener and no prin
 - A real 10 × 10 × 5 mm STL was sliced by the installed Bambu Studio with A1/0.4 mm/PLA profiles. Its resulting 3MF passed file inspection.
 - The existing account's A1 was discovered through the cloud. Fresh cloud telemetry showed `FINISH`, no print error and no HMS entries. The real sliced job passed live cloud preflight, including nozzle and external PLA checks.
 - Both direct MQTT and signed bridge LAN reads timed out at the configured address on this Mac. The address is on a directly connected subnet. The cause is not yet established; local reachability/firmware authorization needs an on-site check. No printer settings were changed.
-- **No physical print, pause or cancel command was sent during setup.** A supervised cloud print and its observed completion remain the final hardware acceptance test. Networking plug-in acceptance is reported as `command_sent`, never as proof that a physical print started or finished.
+- **The live cloud print acceptance test failed.** An unchanged, inspected, previously approved A1 sliced file uploaded successfully. Task creation returned `-3120`, HTTP `403`, reason `internal blocking`. Independent fresh telemetry continued to show the previous completed job with heater targets zero and no print errors. No test print start was observed. Failed/uncertain jobs are retained and never replayed automatically. A successful supervised print remains outstanding.
+- Status includes the reported job name so a submitted job can be distinguished from a previous one. Plug-in failures retain private callback diagnostics and expose the numeric error, HTTP status and known short reason; raw API bodies and request identifiers stay private.
 - Cloud functionality depends on Bambu's service and the installed third-party bridge/plug-in ABI. Versions are pinned; future vendor changes can require an update. No promise of a supported vendor API is implied.
 
 Run `npm test` for offline tests. Run `node scripts/doctor.mjs --cloud` for read-only live cloud checks. See [diagnosis](docs/diagnosis.md) for the original failures and configuration recovery.

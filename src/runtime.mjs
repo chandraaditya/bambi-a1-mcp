@@ -60,10 +60,16 @@ export function createRuntime(config) {
         if (!(device?.online ?? device?.dev_online)) throw new Error('Configured printer is not online in this cloud account.');
         const options = cloudOptions();
         await cloud.connect();
-        return await bridge.callWithAgent('net.start_print', { client_job_id: Date.now(), params }, {
+        const clientJobId = Date.now();
+        const result = await bridge.callWithAgent('net.start_print', { client_job_id: clientJobId, params }, {
           ...options, beforeDispatch: async method => { if (method === 'net.start_print') await beforeDispatch(); },
           onDispatched: method => { if (method === 'net.start_print') onDispatched(); },
         });
+        if (result?.ok === true && result.value === 0) return result;
+        // Keep callback failures in the private job journal for diagnosis; never expose raw API bodies as tool output.
+        const events = await bridge.request('bridge.poll_events', { limit: 4096 }, options).catch(() => ({ events: [] }));
+        return { ...result, diagnostics: (events?.events || []).filter(event =>
+          event.name === 'job.update_status' && event.payload?.job_id === clientJobId).map(event => event.payload) };
       }
       const result = await bridge.startLocalPrint(localPrinter(), 'net.start_local_print',
       { client_job_id: Date.now(), params }, { ...bridgeOptions(),

@@ -9,8 +9,17 @@ const routeCheck = route => {
   if (!['lan', 'cloud'].includes(route)) throw new Error('route must explicitly be lan or cloud.');
 };
 const digest = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function dispatchFailure(result) {
+  const numeric = typeof result?.value === 'number' ? result.value : 'unknown';
+  const last = result?.diagnostics?.findLast(event => event.code === result.value);
+  const http = String(last?.msg || '').match(/\[http code\]:\s*(\d{3})/i)?.[1];
+  const reason = String(last?.msg || '').match(/\[reason\]:\s*([^\r\n]+)/i)?.[1]?.trim();
+  // Only known short labels are public; callback bodies may contain URLs, tokens or request identifiers.
+  const known = ['internal blocking', 'unauthorized', 'forbidden'].includes(reason?.toLowerCase()) ? reason : undefined;
+  return `Networking plug-in rejected print (code ${numeric}${http ? `, HTTP ${http}` : ''}${known ? `, reason: ${known}` : ''}).`;
+}
 const publicJob = job => ({ job_id: job.id, state: job.state, file: job.file, sha256: job.sha256,
-  plate_index: job.plateIndex, inspection: job.inspection, route: job.route,
+  plate_index: job.plateIndex, inspection: job.inspection, route: job.route, error: job.lastError,
   note: job.state === 'dispatching' || job.state === 'unknown' ? 'Dispatch may have reached the printer. Check status before creating another job.' : undefined });
 
 export class PrintService {
@@ -106,14 +115,15 @@ export class PrintService {
         print_type: 'from_normal', try_emmc_print: false,
       };
       const result = await this.runtime.dispatch(route, params, preflight, () => { dispatched = true; });
-      if (result?.ok !== true || result.value !== 0) throw new Error(`Networking plug-in rejected print (code ${typeof result?.value === 'number' ? result.value : 'unknown'}).`);
+      if (result?.diagnostics) job.dispatchDiagnostics = result.diagnostics;
+      if (result?.ok !== true || result.value !== 0) throw new Error(dispatchFailure(result));
       job.state = 'command_sent'; job.dispatchedAt = new Date().toISOString(); this.save(job);
       return { ...publicJob(job), note: 'Networking plug-in accepted dispatch. Read printer_status to confirm the printer started.' };
     } catch (error) {
       if (job?.state === 'dispatching') {
-        job.state = dispatched ? 'unknown' : 'prepared'; this.save(job);
+        job.state = dispatched ? 'unknown' : 'prepared'; job.lastError = error.message; this.save(job);
       }
-      if (dispatched) throw new Error('Print dispatch outcome is unknown; it will not be automatically retried. Read printer_status and inspect the printer before creating another job.');
+      if (dispatched) throw new Error('Print dispatch outcome is unknown; it will not be automatically retried. Read printer_status and inspect the printer before creating another job. Underlying error: ' + error.message);
       throw error;
     } finally { fs.rmSync(lock, { recursive: true, force: true }); }
   }

@@ -57,7 +57,7 @@ export function redact(value, config) {
 
 export function publicStatus(status) {
   const raw = status.raw;
-  return { model: status.model, state: status.status, progressPercent: raw.mc_percent,
+  return { model: status.model, state: status.status, jobName: raw.subtask_name || raw.gcode_file || undefined, progressPercent: raw.mc_percent,
     remainingMinutes: raw.mc_remaining_time, layer: raw.layer_num, totalLayers: raw.total_layer_num,
     temperatures: { nozzle: raw.nozzle_temper, nozzleTarget: raw.nozzle_target_temper,
       bed: raw.bed_temper, bedTarget: raw.bed_target_temper },

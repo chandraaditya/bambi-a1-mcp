@@ -49,6 +49,7 @@ test('timeout after sending is persisted as unknown and never retried', async t 
   const job = await service.prepare({ file_path: file });
   await assert.rejects(service.print({ job_id: job.job_id, route: 'cloud' }), /outcome is unknown/);
   assert.equal(service.get(job.job_id).state, 'unknown');
+  assert.equal(service.read(job.job_id).lastError, 'timeout');
   await service.print({ job_id: job.job_id, route: 'cloud' });
   assert.equal(attempts, 1);
 });
@@ -59,6 +60,24 @@ test('a failed preflight never sends and leaves the job prepared', async t => {
   await assert.rejects(service.print({ job_id: job.job_id, route: 'lan' }), /busy/);
   assert.equal(service.get(job.job_id).state, 'prepared');
   assert.equal(calls.filter(c => c[0] === 'dispatch').length, 0);
+});
+
+test('cloud rejection exposes the HTTP cause and privately retains callback diagnostics without replay', async t => {
+  let attempts = 0;
+  const diagnostics = [{ status: 3, code: -3120,
+    msg: '[http code]: 403\n[request_id]: private-request-id\n[reason]: internal blocking' }];
+  const { service, file } = fixture(t, { dispatch: async (r, p, check, sent) => {
+    attempts++; sent(); return { ok: true, value: -3120, diagnostics };
+  } });
+  const job = await service.prepare({ file_path: file });
+  await assert.rejects(service.print({ job_id: job.job_id, route: 'cloud' }), error => {
+    assert.match(error.message, /code -3120, HTTP 403, reason: internal blocking/);
+    assert.ok(!error.message.includes('private-request-id')); return true;
+  });
+  assert.deepEqual(service.read(job.job_id).dispatchDiagnostics, diagnostics);
+  assert.ok(!JSON.stringify(service.get(job.job_id)).includes('private-request-id'));
+  await service.print({ job_id: job.job_id, route: 'cloud' });
+  assert.equal(attempts, 1);
 });
 
 test('mutated snapshots are rejected before telemetry or dispatch', async t => {
