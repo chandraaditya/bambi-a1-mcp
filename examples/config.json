@@ -1,0 +1,16 @@
+{
+  "model": "a1",
+  "nozzle": 0.4,
+  "bedType": "textured_plate",
+  "host": "YOUR_PRINTER_LAN_ADDRESS",
+  "serial": "YOUR_PRINTER_SERIAL",
+  "country": "IN",
+  "region": "us",
+  "studioConfig": "/absolute/path/to/BambuStudio/BambuStudio.conf",
+  "slicerPath": "/Applications/BambuStudio.app/Contents/MacOS/BambuStudio",
+  "workDir": "/absolute/private/path/to/jobs",
+  "bridgeConfigDir": "/absolute/private/path/to/network",
+  "bridgeRuntimeDir": "/absolute/path/to/FULU/linux-x86_64",
+  "bridgeCommand": "'/absolute/path/to/node' '/absolute/path/to/bambi-a1-mcp/scripts/bridge-docker.mjs'",
+  "dockerPath": "/usr/local/bin/docker"
+}

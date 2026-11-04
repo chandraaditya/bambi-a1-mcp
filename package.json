@@ -1,0 +1,25 @@
+{
+  "name": "bambi-a1-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bambu A1 slicing and LAN/cloud printing without MCP elicitation",
+  "license": "GPL-2.0-only",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "bambi-a1-mcp": "src/server.mjs"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "ajv": "8.20.0",
+    "bambu-printer-mcp": "1.1.51",
+    "mqtt": "5.16.1"
+  }
+}
