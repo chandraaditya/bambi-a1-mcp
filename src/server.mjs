@@ -59,7 +59,7 @@ function profiles(search = '') {
   for (const root of new Set(roots)) walk(root);
   return { paths: output.slice(0, 200), total: output.length, note: output.length > 200 ? 'Use a narrower search.' : undefined };
 }
-const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.1' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.2' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 async function executeTool(request) {
   const a = request.params.arguments || {};
@@ -97,5 +97,8 @@ let closing = false;
 async function shutdown() { if (closing) return; closing = true; await runtime.close(); await server.close(); }
 process.on('SIGINT', () => { void shutdown(); });
 process.on('SIGTERM', () => { void shutdown(); });
+// SDK 1.32.1's stdio transport does not close on input EOF. A disconnected
+// harness must not leave this server and its networking bridge orphaned.
+process.stdin.once('end', () => { void shutdown(); });
 server.onclose = () => { void shutdown(); };
 await server.connect(new StdioServerTransport());

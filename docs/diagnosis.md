@@ -39,3 +39,11 @@ If cloud login expires, sign in to Studio and re-run `scripts/import-studio-sess
 - [Bambu Studio ticket exchange and login payload](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/HttpServer.cpp).
 - [FULU host RPC methods and event payloads](https://github.com/FULU-Foundation/OrcaSlicer-bambulab/blob/main/tools/pjarczak_bambu_linux_host/LinuxPluginHost.cpp).
 - [Bambu Gateway cloud session implementation](https://github.com/leolobato/bambu-gateway/blob/main/app/cloud/session.py) explains selection/subscription/readiness order; this implementation was also verified against the local runtime and live A1 reports.
+
+## CLI configuration and orphaned server (v0.2.2)
+
+Stopping the read-only CLI monitor with SIGTERM left its MCP server reparented to PID 1. The server creation time matched the monitor log, and terminating that specific server let the monitor wrapper finish. No printer command was involved. MCP SDK 1.32.1's server stdio transport listens for data/error but not input EOF, so closing the parent did not itself close the active bridge.
+
+A subprocess regression test also exposed that the CLI had not forwarded `BAMBI_CONFIG`: the SDK's default inherited environment omitted this setting, causing the child to use the default setup. The CLI now forwards its environment and explicitly closes its transport on signals; the server closes its bridge on input EOF. Tests exercise a real server and deliberately pending fake bridge, assert all child processes exit, and verify an isolated configuration is actually used. These tests do not send printer commands. Together with recovery and other existing tests, 36 tests pass.
+
+Cloud HTTP 403 and pause/control rejection remain unresolved hardware/runtime limitations. These lifecycle fixes do not establish that either limitation is fixed.

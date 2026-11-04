@@ -45,3 +45,16 @@ test('CLI requires paired recovery name and cleared-bed confirmation', () => {
     assert.notEqual(result.status, 0); assert.match(result.stderr, /Recovery requires print/);
   }
 });
+
+test('CLI forwards BAMBI_CONFIG to its MCP server instead of using another printer setup', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bambi-cli-config-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const id = '11111111-1111-4111-8111-111111111111', workDir = path.join(directory, 'jobs');
+  fs.mkdirSync(path.join(workDir, id), { recursive: true });
+  fs.writeFileSync(path.join(workDir, id, 'job.json'), JSON.stringify({ id, state: 'prepared', sha256: 'fixture-only' }));
+  const config = path.join(directory, 'config.json'); fs.writeFileSync(config, JSON.stringify({ workDir }));
+  const result = spawnSync(process.execPath, ['scripts/bambi.mjs', 'job', id], {
+    env: { ...process.env, BAMBI_CONFIG: config }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).sha256, 'fixture-only');
+});

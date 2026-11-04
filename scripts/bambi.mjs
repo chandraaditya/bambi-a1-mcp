@@ -18,8 +18,16 @@ prepare never prints. print dispatches a prepared ID at most once.
 verify/watch never resubmit. watch ends on matching completion/failure or timeout.
 Files and profiles are paths on the host running the MCP. Omit --ams for one external spool.
 `;
-const client = new Client({ name: 'bambi-cli', version: '0.2.1' });
-let connected = false;
+const client = new Client({ name: 'bambi-cli', version: '0.2.2' });
+let transport, shutdown;
+const closeClient = () => shutdown ||= (async () => {
+  try { await client.close(); } finally { await transport?.close(); }
+})();
+// Stop the client/bridge, never the printer. An interrupted dispatch retains its
+// durable dispatching/unknown journal and cannot be automatically replayed.
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  process.once(signal, () => { void closeClient().finally(() => process.exit(code)); });
+}
 try {
   const { values: v, positionals: p } = parseArgs({ allowPositionals: true, options: {
     help: { type: 'boolean', short: 'h' }, route: { type: 'string' }, plate: { type: 'string' },
@@ -56,9 +64,9 @@ try {
       ...(command === 'print' && v.ams !== undefined ? { ams_mapping: v.ams.split(',').map(Number) } : {}),
       ...(command === 'print' && v['recover-from'] ? { recovery: { previous_job_name: v['recover-from'], bed_cleared: true } } : {}),
     };
-    const transport = new StdioClientTransport({ command: process.execPath,
-      args: [fileURLToPath(new URL('../src/server.mjs', import.meta.url))], stderr: 'inherit' });
-    await client.connect(transport); connected = true;
+    transport = new StdioClientTransport({ command: process.execPath,
+      args: [fileURLToPath(new URL('../src/server.mjs', import.meta.url))], env: { ...process.env }, stderr: 'inherit' });
+    await client.connect(transport);
     const deadline = Date.now() + timeout * 1000;
     do {
       const result = await client.callTool({ name: commands[command], arguments: args }, undefined, { timeout: 600000 });
@@ -75,4 +83,4 @@ try {
     } while (true);
   }
 } catch (error) { console.error(error.message); process.exitCode = 1; }
-finally { if (connected) await client.close(); }
+finally { await closeClient(); }

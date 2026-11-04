@@ -63,6 +63,8 @@ python3 scripts/install-codex.py --node /absolute/path/to/node
 
 This backs up Codex's configuration, registers this checkout and disables the two known duplicate Bambu MCP entries. Reload the T3 session afterward. Other clients can use the generated JSON entry. `BAMBI_CONFIG` selects a different private configuration file.
 
+**v0.2.2 lifecycle fixes:** the CLI forwards `BAMBI_CONFIG` and other environment configuration to its MCP child. Interrupting the CLI or closing the harness input now closes the MCP server and networking bridge. This only closes the client connection; it never pauses or cancels a printer job.
+
 The package also exposes `bambi-a1-mcp`, `bambi`, `bambi-setup` and `bambi-install-runtime` executable entry points when installed using npm from GitHub or a release tarball. It is not currently published to the npm registry.
 
 ## Print workflow
