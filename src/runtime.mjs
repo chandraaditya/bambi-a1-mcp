@@ -90,15 +90,19 @@ export function createRuntime(config) {
       }, () => {}, localTiming);
       return { ...result.result, diagnostics: result.jobUpdates };
     },
-    async control(route, command) {
+    async control(route, command, beforeDispatch, onDispatch) {
       if (route === 'cloud') {
         await cloud.connect();
+        await beforeDispatch(await cloud.status());
+        onDispatch();
         await cloud.send({ print: { command, sequence_id: String(Date.now()), param: '' } });
         return { status: 'command_sent', command, route, note: 'Read printer_status to confirm execution.' };
       }
       const options = bridgeOptions();
       return bridge.withLocalSession({ devId: config.serial, devIp: config.host, username: 'bblp', password: config.accessCode, useSsl: true },
         options, () => {}, { connectTimeoutMs: 30000, pollMs: 250, settleMs: 3000, retryWaitMs: 8000 }, async () => {
+          await beforeDispatch(await localStatus());
+          onDispatch();
           const result = await bridge.callWithAgent('net.send_message_to_printer', { dev_id: config.serial,
             msg: JSON.stringify({ print: { command, sequence_id: String(Date.now()), param: '' } }), qos: 1, flag: 0 }, options);
           if (result?.ok !== true || result.value !== 0) throw new Error(`Printer control command failed (code ${typeof result?.value === 'number' ? result.value : 'unavailable'}). Execution is not confirmed; inspect fresh printer_status or use the printer screen.`);

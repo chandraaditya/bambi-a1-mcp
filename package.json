@@ -1,6 +1,6 @@
 {
   "name": "bambi-a1-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "Bambu A1 MCP: Bambu Studio slicing, verified LAN printing and cloud monitoring",
   "license": "GPL-2.0-only",

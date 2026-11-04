@@ -47,3 +47,9 @@ Stopping the read-only CLI monitor with SIGTERM left its MCP server reparented t
 A subprocess regression test also exposed that the CLI had not forwarded `BAMBI_CONFIG`: the SDK's default inherited environment omitted this setting, causing the child to use the default setup. The CLI now forwards its environment and explicitly closes its transport on signals; the server closes its bridge on input EOF. Tests exercise a real server and deliberately pending fake bridge, assert all child processes exit, and verify an isolated configuration is actually used. These tests do not send printer commands. Together with recovery and other existing tests, 36 tests pass.
 
 Cloud HTTP 403 and pause/control rejection remain unresolved hardware/runtime limitations. These lifecycle fixes do not establish that either limitation is fixed.
+
+## Control outcome handling (v0.2.3)
+
+The actual pause attempts returned failure and the job continued. That evidence requires distinguishing transport acceptance from observed execution. `control_print` now obtains a fresh named target, rechecks that identity within the connected cloud/LAN session, publishes at most once, and reads back the target state. Managed jobs retain `last_control`, including failed or unconfirmed attempts, without optimistically marking the job paused. Control also shares the operation lock with dispatch and verification. A timeout after publishing never triggers an automatic second command.
+
+Eleven new tests cover state confirmation, missing/stale/wrong-job reports, a job change before transmission, active HMS while pausing, rejected/unknown transport outcomes, absent or unrelated readback, same-job terminal observation, locking, journaling and runtime call order. The full suite has 47 passing tests. These tests use fake transports; the running physical print was not used for further pause/cancel experiments. The cloud HTTP 403 and hardware control rejection remain open.

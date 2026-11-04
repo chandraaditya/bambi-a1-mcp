@@ -5,6 +5,7 @@ import { privateJson, publicStatus } from './config.mjs';
 import { bridgeAmsMapping2Entry } from 'bambu-printer-mcp/dist/ams-mapping.js';
 import { resolveStudioPrintOptions } from 'bambu-printer-mcp/dist/studio-print-options.js';
 import { recoveryIdentity } from './recovery.mjs';
+import { controlWithVerification } from './control.mjs';
 
 const routeCheck = route => {
   if (!['lan', 'cloud'].includes(route)) throw new Error('route must explicitly be lan or cloud.');
@@ -24,6 +25,7 @@ const publicJob = job => ({ job_id: job.id, state: job.state, file: job.file, sh
   printer_job_name: job.printerJobName || (job.route ? `bambi_${job.id}` : undefined),
   last_observation: job.lastObservation, started_at: job.startedAt, completed_at: job.completedAt,
   recovery: job.recovery, last_preflight_error: job.lastPreflightError,
+  last_control: job.lastControl,
   note: job.state === 'dispatching' || job.state === 'unknown' ? 'Dispatch may have reached the printer. Check status before creating another job.' : undefined });
 
 export class PrintService {
@@ -178,10 +180,20 @@ export class PrintService {
     } finally { release(); }
   }
 
-  async control({ route, action }) {
+  async control({ route, action, job_id }) {
     routeCheck(route);
     const command = { pause: 'pause', cancel: 'stop' }[action];
     if (!command) throw new Error('action must be pause or cancel.');
-    return await this.runtime.control(route, command);
+    const release = this.acquireLock();
+    try {
+      const job = job_id ? this.read(job_id) : undefined;
+      if (job?.state === 'prepared') throw new Error('This job has not been submitted; no printer control was sent.');
+      const result = await controlWithVerification(this.runtime, { route, action,
+        expectedJob: job ? job.printerJobName || `bambi_${job.id}` : undefined });
+      if (job) {
+        job.lastControl = { ...result, observedAt: new Date().toISOString() }; this.save(job);
+      }
+      return result;
+    } finally { release(); }
   }
 }

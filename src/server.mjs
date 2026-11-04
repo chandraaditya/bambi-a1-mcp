@@ -37,8 +37,8 @@ const tools = [
       recovery: { ...schema({ previous_job_name: { type: 'string', minLength: 1 }, bed_cleared: { type: 'boolean', const: true } }, ['previous_job_name', 'bed_cleared']),
         description: 'Only for a terminal FAILED previous job after the user confirms cleanup and requests a new print. Fresh telemetry must show idle, no active stage, no errors/HMS and heaters off. Never clears a fault or resumes the old job.' },
     }, ['job_id', 'route']), annotations: { destructiveHint: true, idempotentHint: true } },
-  { name: 'control_print', description: 'Pause or cancel a print using the chosen transport. No MCP elicitation.',
-    inputSchema: schema({ route, action: { type: 'string', enum: ['pause', 'cancel'] } }, ['route', 'action']), annotations: { destructiveHint: true } },
+  { name: 'control_print', description: 'Pause or cancel the freshly identified active print, then verify its state. Optional job_id binds the target to a managed job and journals the result. confirmed:false never means paused/stopped. No automatic retry or MCP elicitation.',
+    inputSchema: schema({ route, job_id: string, action: { type: 'string', enum: ['pause', 'cancel'] } }, ['route', 'action']), annotations: { destructiveHint: true } },
 ];
 const ajv = new Ajv({ allErrors: true, strict: false });
 const validators = new Map(tools.map(tool => [tool.name, ajv.compile(tool.inputSchema)]));
@@ -59,7 +59,7 @@ function profiles(search = '') {
   for (const root of new Set(roots)) walk(root);
   return { paths: output.slice(0, 200), total: output.length, note: output.length > 200 ? 'Use a narrower search.' : undefined };
 }
-const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.2' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.3' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 async function executeTool(request) {
   const a = request.params.arguments || {};
@@ -83,7 +83,8 @@ async function executeTool(request) {
       case 'control_print': result = await service.control(a); break;
       default: throw new Error('Unknown tool.');
     }
-    return { content: [{ type: 'text', text: redact(result, config) }] };
+    return { ...(request.params.name === 'control_print' && result.ok === false ? { isError: true } : {}),
+      content: [{ type: 'text', text: redact(result, config) }] };
   } catch (error) { return { isError: true, content: [{ type: 'text', text: redact(error.message, config) }] }; }
 }
 // FULU has one event queue per process. Concurrent tools must not consume each other's telemetry.

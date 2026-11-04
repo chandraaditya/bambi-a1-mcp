@@ -111,6 +111,26 @@ Recovery requires fresh A1 telemetry with `gcode_state: FAILED`, `print_type: id
 
 If preflight fails, the job remains prepared and `get_job` includes `last_preflight_error`. Resolve that condition and inspect fresh status before calling again. Do not invent a cleared-bed confirmation or acknowledge an active fault merely to get a submission through.
 
+### Pause and cancel outcomes
+
+`control_print` accepts `action: "pause"` or `"cancel"`, an explicit route, and an optional managed `job_id`. Providing the job ID binds the operation to that print and records `last_control` in its durable journal. Without it, the operation targets the freshly observed named active job. Control uses the same operation lock as submission and verification, and rechecks the target inside the connected transport immediately before publishing. Active HMS warnings do not prevent an operator from pausing or stopping.
+
+```json
+{"job_id":"ID_FROM_PREPARE_JOB","route":"lan","action":"pause"}
+```
+
+Inspect **`confirmed`**, not merely `ok` or a successful tool response:
+
+| Status | Meaning |
+| --- | --- |
+| `not_sent` | Target/preflight checks failed; no command was attempted. |
+| `already_paused` | Fresh telemetry already showed that target paused; nothing was sent. |
+| `command_sent` | Transport accepted the command, but execution is not confirmed. |
+| `unknown` | A command was attempted and transport failed; readback did not confirm the desired state. No automatic retry occurs. |
+| `observed_paused` / `observed_terminal` | Fresh telemetry for the same job confirms the desired state. This does not establish which actor/event caused it. |
+
+The result includes before/after observations when available, transport/verification errors, and next steps. A missing or changed-job report never establishes success. If remote control cannot be confirmed, use the printer screen or Bambu Handy. **Remote pause/cancel has not passed a live acceptance test on the tested runtime.** v0.2.3 improves checks, readback and failure handling; it does not claim to fix the underlying transport rejection.
+
 ### Bambu Studio slicing
 
 An STL needs explicit process and filament profiles. Use `list_profiles` to find your installed profiles, then:
