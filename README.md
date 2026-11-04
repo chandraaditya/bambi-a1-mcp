@@ -4,7 +4,7 @@ An open-source MCP server for **Bambu Lab A1** printing. Slice with Bambu Studio
 
 **First physical acceptance test failed:** the user stopped the job at layer 33 after parts came off the plate and spaghetti extrusion followed. The cause of detachment is still under investigation. The file was unchanged. **Transport verified on hardware:** signed LAN submission, external PLA spool, A1 / 0.4 mm nozzle / textured PEI, with fresh cloud telemetry independently confirming the job and advancing layers. Bambu Studio slicing is also verified. **Direct Bambu Cloud print submission remains experimental and currently fails on the tested runtime with HTTP 403 / `internal blocking`.** Cloud monitoring works. For reliable remote submission, use a nearby host over SSH; see [remote printing](#remote-printing).
 
-**v0.2.1 recovery verified on hardware:** the unchanged retry was accepted after the cleared-bed acknowledgement, without rebooting or clearing faults. Independent telemetry confirmed the new job preparing. Physical completion is still pending.
+**v0.2.1 recovery verified on hardware:** the unchanged retry was accepted after the cleared-bed acknowledgement, without rebooting or clearing faults. Independent telemetry confirmed the new job preparing. The Y-axis warning subsequently recurred while layers advanced. Remote pause attempts failed on both transports; reliable remote pause/cancel is not established. Physical completion is still pending.
 
 No additional MCP elicitation dialog is required. Your MCP client's own tool permissions still apply. The server validates the file, model, nozzle, filament and fresh printer state before dispatch. It does not clear faults or change printer modes.
 

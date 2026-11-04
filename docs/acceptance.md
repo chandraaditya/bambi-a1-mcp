@@ -44,3 +44,9 @@ The user explicitly requested the recovery fix and another print after cleaning 
 Validation: 33 automated tests cover recovery rejection for active/calibrating states, malformed or stale reports, identity and material/nozzle mismatches, actionable HMS, heater targets, changed previous-job identity, repeated calls and server restarts. A release tarball was installed into a clean prefix and its actual stdio tool schema was verified without elicitation support.
 
 Primary reference: [Bambu Studio device state classification](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceManager.cpp).
+
+### Subsequent warning and control limitation
+
+After the recovered job started, a newly timestamped Y-axis low-resonance HMS entry appeared again during preparation. Fresh telemetry then confirmed the new job actually printing at layers 1 and 2 of 375, with nozzle target 205 C, bed target 65 C and `print_error: 0`. The warning is not proof of a loose belt or a failed physical part. Initial camera frames were too obstructed by the bed/head angle to establish adhesion quality.
+
+A precautionary pause attempt through `control_print` failed: the cloud call returned code -2, and the LAN call also rejected the control command. Subsequent telemetry still showed RUNNING, so no pause success is claimed. The operator was informed. Reliable remote pause/cancel is therefore not established on this runtime, even though print submission and monitoring work. No further print, resume or fault-clear command was sent. Physical completion remains unverified.

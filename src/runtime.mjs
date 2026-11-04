@@ -101,8 +101,8 @@ export function createRuntime(config) {
         options, () => {}, { connectTimeoutMs: 30000, pollMs: 250, settleMs: 3000, retryWaitMs: 8000 }, async () => {
           const result = await bridge.callWithAgent('net.send_message_to_printer', { dev_id: config.serial,
             msg: JSON.stringify({ print: { command, sequence_id: String(Date.now()), param: '' } }), qos: 1, flag: 0 }, options);
-          if (result?.ok !== true || result.value !== 0) throw new Error('Printer control command failed.');
-          return { status: 'command_sent', command, route };
+          if (result?.ok !== true || result.value !== 0) throw new Error(`Printer control command failed (code ${typeof result?.value === 'number' ? result.value : 'unavailable'}). Execution is not confirmed; inspect fresh printer_status or use the printer screen.`);
+          return { status: 'command_sent', command, route, note: 'Read printer_status to confirm execution.' };
         });
     },
     async diagnose(connect) {
