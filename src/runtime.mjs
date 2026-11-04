@@ -3,7 +3,7 @@ import net from 'node:net';
 import { BambuNetworkBridge } from 'bambu-printer-mcp/dist/bambu-network-bridge.js';
 import { STLManipulator } from 'bambu-printer-mcp/dist/stl/stl-manipulator.js';
 import { inspectPrintFile } from 'bambu-printer-mcp/dist/safety/print-file.js';
-import { validatePrinterState } from 'bambu-printer-mcp/dist/safety/printer-state.js';
+import { validatePrinterState } from './vendor/printer-state.mjs';
 import { credentials } from './config.mjs';
 import { freshMqttStatus, withLanMqtt } from './telemetry.mjs';
 import { CloudBridge, freshBridgeStatus, checked } from './cloud-bridge.mjs';

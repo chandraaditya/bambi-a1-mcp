@@ -33,7 +33,10 @@ const tools = [
   { name: 'verify_job', description: 'Verify a submitted job against fresh printer telemetry and save its observed progress. Exact job-name match required. Layer 0 is preparation. Never submits or retries a print. Optional route overrides the submission route, allowing cloud monitoring of a LAN print.',
     inputSchema: schema({ job_id: string, route }, ['job_id']), annotations: { readOnlyHint: true, idempotentHint: true } },
   { name: 'print_job', description: 'Print an explicitly prepared job using LAN or cloud with fresh printer checks. Direct execution; no MCP elicitation. Repeated job IDs are not dispatched twice. Optional ams_mapping uses zero-based AMS Lite slots; omit for one external spool.',
-    inputSchema: schema({ job_id: string, route, ams_mapping: { type: 'array', minItems: 1, items: { type: 'integer', minimum: -1, maximum: 3 } } }, ['job_id', 'route']), annotations: { destructiveHint: true, idempotentHint: true } },
+    inputSchema: schema({ job_id: string, route, ams_mapping: { type: 'array', minItems: 1, items: { type: 'integer', minimum: -1, maximum: 3 } },
+      recovery: { ...schema({ previous_job_name: { type: 'string', minLength: 1 }, bed_cleared: { type: 'boolean', const: true } }, ['previous_job_name', 'bed_cleared']),
+        description: 'Only for a terminal FAILED previous job after the user confirms cleanup and requests a new print. Fresh telemetry must show idle, no active stage, no errors/HMS and heaters off. Never clears a fault or resumes the old job.' },
+    }, ['job_id', 'route']), annotations: { destructiveHint: true, idempotentHint: true } },
   { name: 'control_print', description: 'Pause or cancel a print using the chosen transport. No MCP elicitation.',
     inputSchema: schema({ route, action: { type: 'string', enum: ['pause', 'cancel'] } }, ['route', 'action']), annotations: { destructiveHint: true } },
 ];
@@ -56,7 +59,7 @@ function profiles(search = '') {
   for (const root of new Set(roots)) walk(root);
   return { paths: output.slice(0, 200), total: output.length, note: output.length > 200 ? 'Use a narrower search.' : undefined };
 }
-const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.1' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 async function executeTool(request) {
   const a = request.params.arguments || {};

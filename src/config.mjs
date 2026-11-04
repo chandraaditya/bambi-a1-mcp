@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { hmsCode } from 'bambu-printer-mcp/dist/safety/printer-state.js';
 import { HMS_MESSAGES } from 'bambu-printer-mcp/dist/safety/hms-messages.js';
+import { recoveryStatus } from './recovery.mjs';
 
 export const configHome = () => path.join(os.homedir(), '.config', 'bambi-a1-mcp');
 export const defaultStudioConfig = () => path.join(os.homedir(), process.platform === 'darwin'
@@ -69,6 +70,7 @@ export function publicStatus(status) {
     ams: raw.ams?.ams?.map(unit => ({ id: unit.id, slots: unit.tray?.map(tray => ({ id: tray.id,
       material: tray.tray_type, color: tray.tray_color })) })),
     externalFilament: raw.vt_tray ? { material: raw.vt_tray.tray_type, color: raw.vt_tray.tray_color } : undefined,
+    printType: raw.print_type, stage: raw.stg_cur, recovery: recoveryStatus(raw),
     printError: raw.print_error, hms: raw.hms?.map(entry => {
       const parsed = hmsCode(entry), description = HMS_MESSAGES[parsed?.hex];
       const message = typeof description === 'string' ? description : description?.[status.serial?.slice(0, 3)] ?? description?.['*'];

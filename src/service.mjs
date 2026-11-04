@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { privateJson, publicStatus } from './config.mjs';
 import { bridgeAmsMapping2Entry } from 'bambu-printer-mcp/dist/ams-mapping.js';
 import { resolveStudioPrintOptions } from 'bambu-printer-mcp/dist/studio-print-options.js';
+import { recoveryIdentity } from './recovery.mjs';
 
 const routeCheck = route => {
   if (!['lan', 'cloud'].includes(route)) throw new Error('route must explicitly be lan or cloud.');
@@ -22,6 +23,7 @@ const publicJob = job => ({ job_id: job.id, state: job.state, file: job.file, sh
   plate_index: job.plateIndex, inspection: job.inspection, route: job.route, error: job.lastError,
   printer_job_name: job.printerJobName || (job.route ? `bambi_${job.id}` : undefined),
   last_observation: job.lastObservation, started_at: job.startedAt, completed_at: job.completedAt,
+  recovery: job.recovery, last_preflight_error: job.lastPreflightError,
   note: job.state === 'dispatching' || job.state === 'unknown' ? 'Dispatch may have reached the printer. Check status before creating another job.' : undefined });
 
 export class PrintService {
@@ -106,7 +108,7 @@ export class PrintService {
     } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
   }
 
-  async print({ job_id, route, ams_mapping }) {
+  async print({ job_id, route, ams_mapping, recovery }) {
     routeCheck(route);
     const release = this.acquireLock();
     let job, dispatched = false;
@@ -123,14 +125,23 @@ export class PrintService {
       }
       if (!useAMS && inspection.usedFilamentPositions.length > 1) throw new Error('Multiple materials require explicit AMS Lite mapping.');
       const mapping = useAMS ? ams_mapping.slice() : inspection.materials.map(() => 254);
-      const requirements = { ...inspection, useAMS, amsMapping: mapping };
+      const requirements = { ...inspection, useAMS, amsMapping: mapping, recovery };
+      let recoveredIdentity;
       const preflight = async observedStatus => {
         if (digest(job.file) !== job.sha256) throw new Error('Prepared file changed before dispatch.');
         const status = observedStatus || await this.runtime.status(route);
         this.runtime.validate(status, requirements);
+        if (recoveredIdentity && recoveryIdentity(status.raw) !== recoveredIdentity) {
+          throw new Error('Printer job identity changed during recovery. No command was sent; inspect fresh status.');
+        }
+        if (recovery && status.raw?.gcode_state === 'FAILED') recoveredIdentity ||= recoveryIdentity(status.raw);
       };
       await preflight();
-      job = { ...job, state: 'dispatching', route, amsMapping: mapping, printerJobName: `bambi_${job.id}` };
+      delete job.recovery;
+      delete job.lastError;
+      job = { ...job, state: 'dispatching', route, amsMapping: mapping, printerJobName: `bambi_${job.id}`,
+        ...(recoveredIdentity ? { recovery: { ...recovery, identity: recoveredIdentity, acknowledgedAt: new Date().toISOString() } } : {}) };
+      delete job.lastPreflightError;
       this.save(job);
       const name = job.printerJobName;
       const calibration = resolveStudioPrintOptions('a1', { bedLeveling: true, flowCalibration: true });
@@ -158,6 +169,9 @@ export class PrintService {
     } catch (error) {
       if (job?.state === 'dispatching') {
         job.state = dispatched ? 'unknown' : 'prepared'; job.lastError = error.message; this.save(job);
+      }
+      if (job?.state === 'prepared' && !dispatched) {
+        job.lastPreflightError = error.message; this.save(job);
       }
       if (dispatched) throw new Error('Print dispatch outcome is unknown; it will not be automatically retried. Read printer_status and inspect the printer before creating another job. Underlying error: ' + error.message);
       throw error;

@@ -2,7 +2,9 @@
 
 An open-source MCP server for **Bambu Lab A1** printing. Slice with Bambu Studio, inspect an exact file snapshot, submit a print, and verify that the printer is actually running that job. Works with T3 Code and other clients that launch stdio MCP servers.
 
-**Physical acceptance test failed:** the user stopped the job at layer 33 after parts came off the plate and spaghetti extrusion followed. The cause of detachment is still under investigation. The file was unchanged. **Transport verified on hardware:** signed LAN submission, external PLA spool, A1 / 0.4 mm nozzle / textured PEI, with fresh cloud telemetry independently confirming the job and advancing layers. Bambu Studio slicing is also verified. **Direct Bambu Cloud print submission remains experimental and currently fails on the tested runtime with HTTP 403 / `internal blocking`.** Cloud monitoring works. For reliable remote submission, use a nearby host over SSH; see [remote printing](#remote-printing).
+**First physical acceptance test failed:** the user stopped the job at layer 33 after parts came off the plate and spaghetti extrusion followed. The cause of detachment is still under investigation. The file was unchanged. **Transport verified on hardware:** signed LAN submission, external PLA spool, A1 / 0.4 mm nozzle / textured PEI, with fresh cloud telemetry independently confirming the job and advancing layers. Bambu Studio slicing is also verified. **Direct Bambu Cloud print submission remains experimental and currently fails on the tested runtime with HTTP 403 / `internal blocking`.** Cloud monitoring works. For reliable remote submission, use a nearby host over SSH; see [remote printing](#remote-printing).
+
+**v0.2.1 recovery verified on hardware:** the unchanged retry was accepted after the cleared-bed acknowledgement, without rebooting or clearing faults. Independent telemetry confirmed the new job preparing. Physical completion is still pending.
 
 No additional MCP elicitation dialog is required. Your MCP client's own tool permissions still apply. The server validates the file, model, nozzle, filament and fresh printer state before dispatch. It does not clear faults or change printer modes.
 
@@ -86,6 +88,26 @@ The same job ID can be verified through `route: "cloud"`, even though submission
 Omit `ams_mapping` for one external spool. For AMS Lite, map every project filament position to a physical slot: `"ams_mapping": [0, 2]`. Slots are zero based; `-1` is allowed only for unused project positions. Multi-material external-spool jobs are refused. Plate indices are also zero based.
 
 Filament type is validated against printer telemetry. The operator must confirm the actual spool and clear build plate before instructing a print; telemetry cannot establish those physical facts.
+
+### Recover after a cancelled or failed job
+
+An A1 can retain `FAILED` after a job has ended. That describes the previous job; it does not by itself establish an active machine fault. `printer_status` returns `recovery.eligible` and an explanation. An eligible report still requires operator confirmation that the plate has been cleared and a request to start a new print. No reboot or automatic fault clearing is required by this recovery workflow.
+
+Call `print_job` with the prepared, unsubmitted job ID and the **exact previous job name from fresh status**:
+
+```json
+{"job_id":"ID_FROM_PREPARE_JOB","route":"lan","recovery":{"previous_job_name":"NAME_FROM_PRINTER_STATUS","bed_cleared":true}}
+```
+
+Or use the CLI, which calls that same MCP tool:
+
+```sh
+bambi print JOB_ID --route lan --recover-from 'NAME_FROM_PRINTER_STATUS' --bed-cleared
+```
+
+Recovery requires fresh A1 telemetry with `gcode_state: FAILED`, `print_type: idle`, no active stage (`stg_cur: 255`), both heater targets off, zero `print_error`, and an empty HMS list. An optional newer job-state field must also be terminal or idle. All identity, nozzle, material and file checks remain in force. The previous job identity is checked again immediately before transmission; a changed job or new fault blocks submission. This neither resumes nor replays the failed job. The recovery acknowledgement is recorded in the new job's journal. A dispatch timeout still produces an unknown, non-replayable outcome.
+
+If preflight fails, the job remains prepared and `get_job` includes `last_preflight_error`. Resolve that condition and inspect fresh status before calling again. Do not invent a cleared-bed confirmation or acknowledge an active fault merely to get a submission through.
 
 ### Bambu Studio slicing
 

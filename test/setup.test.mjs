@@ -36,3 +36,12 @@ test('CLI rejects an implicit print route before launching any MCP', () => {
   const result = spawnSync(process.execPath, ['scripts/bambi.mjs', 'print', 'any-job'], { encoding: 'utf8' });
   assert.notEqual(result.status, 0); assert.match(result.stderr, /route.*required/);
 });
+
+test('CLI requires paired recovery name and cleared-bed confirmation', () => {
+  for (const args of [ ['print', 'id', '--route', 'lan', '--recover-from', 'old'],
+    ['print', 'id', '--route', 'lan', '--bed-cleared'],
+    ['status', '--route', 'lan', '--recover-from', 'old', '--bed-cleared'] ]) {
+    const result = spawnSync(process.execPath, ['scripts/bambi.mjs', ...args], { encoding: 'utf8' });
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /Recovery requires print/);
+  }
+});

@@ -22,6 +22,11 @@ test('real stdio protocol works without elicitation and validates tool arguments
   const invalid = await client.callTool({ name: 'print_job', arguments: { job_id: 'test', route: 'unexpected' } });
   assert.equal(invalid.isError, true);
   assert.match(invalid.content[0].text, /Invalid tool arguments/);
+  for (const recovery of [{ previous_job_name: 'old' }, { previous_job_name: 'old', bed_cleared: false },
+    { previous_job_name: '', bed_cleared: true }, { previous_job_name: 'old', bed_cleared: true, force: true }]) {
+    const rejected = await client.callTool({ name: 'print_job', arguments: { job_id: 'test', route: 'lan', recovery } });
+    assert.equal(rejected.isError, true); assert.match(rejected.content[0].text, /Invalid tool arguments/);
+  }
   const pathTraversal = await client.callTool({ name: 'get_job', arguments: { job_id: '../../private' } });
   assert.equal(pathTraversal.isError, true);
 });
