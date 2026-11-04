@@ -2,7 +2,7 @@
 
 An open-source MCP server for **Bambu Lab A1** printing. Slice with Bambu Studio, inspect an exact file snapshot, submit a print, and verify that the printer is actually running that job. Works with T3 Code and other clients that launch stdio MCP servers.
 
-**Verified on hardware:** signed LAN printing, external PLA spool, A1 / 0.4 mm nozzle / textured PEI, with fresh cloud telemetry independently confirming the job and advancing layers. Bambu Studio slicing is also verified. **Direct Bambu Cloud print submission remains experimental and currently fails on the tested runtime with HTTP 403 / `internal blocking`.** Cloud monitoring works. For reliable remote submission, use a nearby host over SSH; see [remote printing](#remote-printing).
+**Physical acceptance test failed:** the user stopped the job at layer 33 after observing a print failure. Its physical cause is still under investigation. The file was unchanged. **Transport verified on hardware:** signed LAN submission, external PLA spool, A1 / 0.4 mm nozzle / textured PEI, with fresh cloud telemetry independently confirming the job and advancing layers. Bambu Studio slicing is also verified. **Direct Bambu Cloud print submission remains experimental and currently fails on the tested runtime with HTTP 403 / `internal blocking`.** Cloud monitoring works. For reliable remote submission, use a nearby host over SSH; see [remote printing](#remote-printing).
 
 No additional MCP elicitation dialog is required. Your MCP client's own tool permissions still apply. The server validates the file, model, nozzle, filament and fresh printer state before dispatch. It does not clear faults or change printer modes.
 
@@ -141,7 +141,7 @@ The Docker runtime is x86-64. A Raspberry Pi requires a separately configured co
 - A timeout after dispatch is recorded as `unknown`, never automatically retried. `verify_job` can resolve it from a matching live job.
 - The networking library can retry its specific local **publish-failed** error once, with a fresh preflight. There is no generic print retry or automatic transport fallback.
 - Faults are reported, not cleared. A crash can leave a lock; inspect the live printer and process before removing it.
-- The current live test established actual printing, not completed-part quality. The printer raised a Y-axis resonance/possible loose-belt HMS entry during preparation; this was surfaced and left intact.
+- The live test reached layer 33, then the user stopped it after observing a physical failure. It did not produce a completed acceptable part. The printer raised a Y-axis resonance/possible loose-belt HMS entry during preparation; this was surfaced and left intact.
 - LAN reachability was intermittent during the live test: after printing started, new connections to port 8883 timed out from both macOS and Docker while FTPS 990 remained reachable. Cloud monitoring continued. `diagnose` with `connect_bridge: true` reports separate host TCP probes; a reachable port alone does not prove protocol authorization. This network/firmware cause remains unresolved.
 - Cloud service changes, firmware changes and expired sessions can still require maintenance. Pinned dependencies make the tested setup reproducible, not permanently immune to vendor changes.
 

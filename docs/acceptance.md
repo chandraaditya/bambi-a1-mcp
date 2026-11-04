@@ -1,5 +1,7 @@
 # Live acceptance — 2026-11-04
 
+**Final test outcome: unsuccessful physical print.** The user reported a physical failure and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The cause of the physical failure is not established, and the Y-axis HMS warning is not by itself proof of its cause. No retry or resume is authorized by this failure report.
+
 ## Scope
 
 One previously sliced and approved single-plate A1 job, unchanged across file inspection, snapshot and dispatch. SHA-256 was independently checked against the user's approved source. The private source file, credentials, serial, LAN address, cloud request identifiers and camera captures are not published.
