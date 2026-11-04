@@ -1,6 +1,6 @@
 # Live acceptance — 2026-11-04
 
-**Final test outcome: unsuccessful physical print.** The user reported a physical failure and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The cause of the physical failure is not established, and the Y-axis HMS warning is not by itself proof of its cause. No retry or resume is authorized by this failure report.
+**Final test outcome: unsuccessful physical print.** The user reported that parts shifted and came off the plate, followed by spaghetti extrusion, and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The user observation establishes detachment from the plate; why the parts detached is not established, and the Y-axis HMS warning is not by itself proof of its cause. The failure report itself did not authorize a retry; a later explicit user request did, as recorded below.
 
 ## Scope
 
@@ -26,3 +26,9 @@ The public runtime installer downloads FULU v1.0.0 and Bambu Linux networking pl
 The verified remote arrangement is cloud monitoring plus LAN submission from a nearby host. SSH stdio is documented for reaching that host remotely, but an off-site SSH deployment was not part of this hardware test. Direct Bambu Cloud submission remains unsuccessful on this runtime.
 
 A print command being accepted is not completion evidence. Use `verify_job` or `bambi watch JOB_ID --route cloud` to follow the matching job to a terminal state, then inspect the physical part.
+
+## Stopped-print follow-up
+
+The user described parts shifting and coming off the plate, followed by spaghetti extrusion. This is user-observed evidence; no post-failure camera image was available for independent inspection. The unchanged archive contains `brim_type = no_brim`, initial-layer settings of 50 mm/s for walls and 105 mm/s for infill, and actual G-code temperature commands of 205 C nozzle / 65 C bed. Its project metadata says 220 C nozzle, so the executable temperature commands and matching telemetry take precedence over that metadata. These settings are observations, not proof of the cause. No file edits, re-slicing, fault clearing or printer adjustment followed the failure report. The user subsequently reported cleaning the plate and explicitly requested one fresh print of the same file. A new durable job was prepared, and its SHA-256 matched the approved file.
+
+The explicitly authorized retry was blocked by preflight with `Printer state FAILED is not safely idle.` No new dispatch was sent, and the prepared retry remains unsubmitted. Returning to the ready screen did not change fresh LAN telemetry from `FAILED`; the Y-axis HMS entry remained present. A later live camera capture succeeded and showed the plate cleared. The user reported having tightened the belt and started calibration. Printing is held pending that calibration and fresh preflight checks; no safety validation was removed or overridden.
