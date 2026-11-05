@@ -1,5 +1,17 @@
 # Live acceptance
 
+## Accepted outcome — v0.2.7, 2026-11-06 (Asia/Kolkata)
+
+The two-part PETG print completed. The quiet MCP watcher received a fresh cloud report matching the exact managed job and emitted `completed`: `FINISH`, 190/190 layers, 100%, zero remaining time, `print_error: 0`, an empty HMS list, and nozzle/bed targets both zero. The event was observed at 2026-11-05 19:16:50 UTC (2026-11-06 00:46:50 IST). The watcher exited successfully on that event; no new print was submitted. Its private journal retains the exact job identity and source snapshot hash.
+
+After completion, the operator inspected the parts and stated, “Print quality is great.” This is operator-confirmed physical acceptance, separately supported by matching completion telemetry; it is not a quality judgment inferred solely from zero error codes or a camera frame.
+
+The accepted scope is the reusable public A1 MCP with Bambu Studio slicing, signed LAN printing, cloud monitoring, explicit verified LAN pause/resume, fault reporting and guarded recovery, duplicate-submission protection, camera access, and quiet event-based monitoring. The operator explicitly deferred automatic spaghetti detection and accepted the existing direct-cloud limitation when requesting the next release and goal closure. Direct cloud task creation still fails with HTTP 403 / `internal blocking`; physical cloud controls, cancellation, and an off-site SSH deployment remain unverified. These limits stay documented and are not release-closure blockers under the agreed scope.
+
+Version 0.2.7 records acceptance and updates package metadata; it adds no runtime behavior beyond v0.2.6. The completed print began before v0.2.6, used the verified LAN pause/resume correction during printing, and finished under the quiet v0.2.6 watcher. The v0.2.6 removal of the dependency's automatic print retry was tested offline, not by submitting another physical copy. No new hardware commands were sent for this acceptance release.
+
+The sections below preserve the investigation chronologically. Statements about pending completion or unresolved LAN control describe the evidence available at those earlier checkpoints; the accepted outcome above is current.
+
 ## PETG plate and camera — 2026-11-05
 
 The operator loaded external-spool PETG and explicitly requested hardware testing and printing a previously approved two-part plate. The existing sliced archive was inspected and snapshotted unchanged: A1 / 0.4 mm stainless nozzle / textured PEI, two parts, 190 layers, 2 walls, 8% gyroid, 240 C printing temperature, 80 C bed, 52.17 g and a 144-minute slicer estimate. The archive and prepared snapshot had identical SHA-256 hashes. Personal model files and hashes remain in the private job journal.

@@ -1,5 +1,7 @@
 # Investigation: 2026-11-04
 
+**Current outcome (v0.2.7):** the PETG plate completed through MCP and the operator accepted the finished-part quality. Automatic spaghetti detection is deferred, and the direct-cloud submission limitation is accepted for this release rather than claimed fixed. See [current acceptance](acceptance.md#accepted-outcome--v027-2026-11-06-asiakolkata). The investigation below retains earlier evidence and limitations.
+
 The original workspace was empty. Two Bambu MCP installations were already configured in both Codex and Claude: upstream `bambu-printer-mcp` 1.1.51 and a separate ceweldy fork. This work changed only the Codex registrations and added a separate integration/configuration.
 
 **Later live result:** the signed LAN route successfully submitted the unchanged approved file, and independent cloud telemetry verified the matching job with advancing layers. LAN timeouts later recurred, isolated to new TCP connections on port 8883 from both macOS and Docker while FTPS 990 stayed reachable; their cause remains unknown. The cloud task-creation failure still reproduces, including with an empty `connection_type`. See [acceptance evidence](acceptance.md). The reusable supported submission path is LAN from the local/nearby host; cloud monitoring works.
