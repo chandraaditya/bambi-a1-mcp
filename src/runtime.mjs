@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import net from 'node:net';
+import { randomInt } from 'node:crypto';
 import { BambuNetworkBridge } from 'bambu-printer-mcp/dist/bambu-network-bridge.js';
 import { STLManipulator } from 'bambu-printer-mcp/dist/stl/stl-manipulator.js';
 import { inspectPrintFile } from 'bambu-printer-mcp/dist/safety/print-file.js';
@@ -7,6 +8,11 @@ import { validatePrinterState } from './vendor/printer-state.mjs';
 import { credentials } from './config.mjs';
 import { freshMqttStatus, withLanMqtt } from './telemetry.mjs';
 import { CloudBridge, freshBridgeStatus, checked } from './cloud-bridge.mjs';
+
+// Studio sends decimal int sequence IDs for print controls. Millisecond Unix
+// timestamps exceed that range; keep control IDs within signed 32-bit bounds.
+let controlSequence = randomInt(10000, 1000000);
+const nextControlSequence = () => String(controlSequence = controlSequence >= 2147483647 ? 1 : controlSequence + 1);
 
 function tcpProbe(host, port) {
   return new Promise(resolve => {
@@ -46,6 +52,12 @@ export function createRuntime(config) {
   return {
     inspect: (file, plateIndex) => inspectPrintFile(file, { model: 'a1', nozzleDiameters: [config.nozzle], bedType: config.bedType, plateIndex }),
     validate: validatePrinterState,
+    async cameraSnapshot(timeoutMs = 15000) {
+      if (!config.host || !config.accessCode) throw new Error('Camera access requires the configured LAN host and access code. Cloud telemetry does not provide a camera stream.');
+      const { BambuImplementation } = await import('bambu-printer-mcp/dist/printers/bambu.js');
+      return new BambuImplementation().cameraSnapshot(config.host, config.serial, config.accessCode,
+        { bambuModel: 'a1', timeoutMs });
+    },
     async status(route) {
       if (route === 'cloud') return cloud.status();
       if (config.lanTelemetry === 'mqtt') return withLanMqtt(config, client => freshMqttStatus(client, config));
@@ -95,7 +107,7 @@ export function createRuntime(config) {
         await cloud.connect();
         await beforeDispatch(await cloud.status());
         onDispatch();
-        await cloud.send({ print: { command, sequence_id: String(Date.now()), param: '' } });
+        await cloud.send({ print: { command, sequence_id: nextControlSequence(), param: '' } });
         return { status: 'command_sent', command, route, note: 'Read printer_status to confirm execution.' };
       }
       const options = bridgeOptions();
@@ -104,7 +116,7 @@ export function createRuntime(config) {
           await beforeDispatch(await localStatus());
           onDispatch();
           const result = await bridge.callWithAgent('net.send_message_to_printer', { dev_id: config.serial,
-            msg: JSON.stringify({ print: { command, sequence_id: String(Date.now()), param: '' } }), qos: 1, flag: 0 }, options);
+            msg: JSON.stringify({ print: { command, sequence_id: nextControlSequence(), param: '' } }), qos: 1, flag: 0 }, options);
           if (result?.ok !== true || result.value !== 0) throw new Error(`Printer control command failed (code ${typeof result?.value === 'number' ? result.value : 'unavailable'}). Execution is not confirmed; inspect fresh printer_status or use the printer screen.`);
           return { status: 'command_sent', command, route, note: 'Read printer_status to confirm execution.' };
         });

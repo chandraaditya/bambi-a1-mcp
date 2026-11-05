@@ -17,7 +17,7 @@ The ceweldy fork lacks the main upstream's current confirmation implementation, 
 
 ## Chosen implementation
 
-The server exposes nine focused tools. There is no shell-execution or raw networking-bridge tool. Inputs are schema-validated. Tools are serialized because the bridge has a shared event queue. The printer route is explicit; cloud never falls back to LAN and LAN never silently falls back to cloud.
+The server exposes ten focused tools. There is no shell-execution or raw networking-bridge tool. Inputs are schema-validated. Tools are serialized because the bridge has a shared event queue. The printer route is explicit; cloud never falls back to LAN and LAN never silently falls back to cloud.
 
 Each prepared job has its own directory and file snapshot. Dispatch records are saved before the bridge receives a print call. A process restart or repeat call cannot replay a dispatched job. A timeout after handing the request to the bridge leaves an `unknown` record and requires inspection before another job is created. A global operation lock prevents simultaneous print dispatch from processes sharing this job directory. A crashed process may leave the lock; inspect the printer and process state before removing it. This is not a printer-wide lock across unrelated clients.
 
@@ -53,3 +53,13 @@ Cloud HTTP 403 and pause/control rejection remain unresolved hardware/runtime li
 The actual pause attempts returned failure and the job continued. That evidence requires distinguishing transport acceptance from observed execution. `control_print` now obtains a fresh named target, rechecks that identity within the connected cloud/LAN session, publishes at most once, and reads back the target state. Managed jobs retain `last_control`, including failed or unconfirmed attempts, without optimistically marking the job paused. Control also shares the operation lock with dispatch and verification. A timeout after publishing never triggers an automatic second command.
 
 Eleven new tests cover state confirmation, missing/stale/wrong-job reports, a job change before transmission, active HMS while pausing, rejected/unknown transport outcomes, absent or unrelated readback, same-job terminal observation, locking, journaling and runtime call order. The full suite has 47 passing tests. These tests use fake transports; the running physical print was not used for further pause/cancel experiments. The cloud HTTP 403 and hardware control rejection remain open.
+
+## Camera evidence and guarded resume (v0.2.4)
+
+Physical detachment can occur while telemetry still reports printing with no errors. `camera_snapshot` now exposes the existing A1 LAN camera reader as a read-only MCP image tool, with bounded timeout and no lighting or motion commands. A live real-stdio test returned a JPEG successfully. Camera failure is an explicit error, not a claim that the bed is clear or the print is healthy.
+
+The control tool also accepts explicit resume of a managed job. Both fresh pre-dispatch checks require the exact paused job, zero print error and an empty HMS list. Missing fault fields, new warnings, a changed job or a running/terminal job prevent transmission. Resume does not clear errors and never happens automatically. As with pause/cancel, only fresh matching readback confirms the requested state; rejected or unknown commands are not retried.
+
+The 51-test suite passes, including new checks for fault-blocked resume at either pre-dispatch check, required managed identity, camera configuration, timeout without retry, and the public stdio schema. These tests do not prove physical control reliability; hardware evidence is tracked in [acceptance](acceptance.md).
+
+Control sequence IDs now stay within a signed 32-bit integer range, matching [Studio's counter representation](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceManager.hpp), instead of using oversized millisecond timestamps. Live tests still failed: LAN pause returned -4, cloud pause returned -2, and both readbacks showed the target still running. The format change is not claimed as a transport fix. [Bambu's published error definitions](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/Utils/bambu_networking.hpp) name -4 `BAMBU_NETWORK_ERR_SEND_MSG_FAILED` and -2 `BAMBU_NETWORK_ERR_CONNECT_FAILED`; these labels do not identify why control failed while status requests succeeded.

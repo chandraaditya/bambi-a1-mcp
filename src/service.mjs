@@ -182,8 +182,9 @@ export class PrintService {
 
   async control({ route, action, job_id }) {
     routeCheck(route);
-    const command = { pause: 'pause', cancel: 'stop' }[action];
-    if (!command) throw new Error('action must be pause or cancel.');
+    const command = { pause: 'pause', cancel: 'stop', resume: 'resume' }[action];
+    if (!command) throw new Error('action must be pause, cancel or resume.');
+    if (action === 'resume' && !job_id) throw new Error('Resume requires the managed job_id; no printer control was sent.');
     const release = this.acquireLock();
     try {
       const job = job_id ? this.read(job_id) : undefined;

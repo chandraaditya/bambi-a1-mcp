@@ -22,6 +22,8 @@ const tools = [
     inputSchema: schema({ connect_bridge: { type: 'boolean' } }), annotations: { readOnlyHint: true } },
   { name: 'list_printers', description: 'List cloud-bound printers without returning tokens or serials.', inputSchema: schema(), annotations: { readOnlyHint: true } },
   { name: 'printer_status', description: 'Read fresh printer identity, job, temperatures, AMS and errors through LAN or cloud.', inputSchema: schema({ route }, ['route']), annotations: { readOnlyHint: true } },
+  { name: 'camera_snapshot', description: 'Read one live A1 camera frame over LAN for visual inspection of the bed and print. Returns a JPEG image; does not move the printer, change lighting or detect defects automatically. Requires LAN reachability from the MCP host.',
+    inputSchema: schema({ timeout_ms: { type: 'integer', minimum: 1000, maximum: 30000 } }), annotations: { readOnlyHint: true } },
   { name: 'list_profiles', description: 'Find installed Bambu Studio machine, process and filament profile paths. Filter by name.',
     inputSchema: schema({ search: string }), annotations: { readOnlyHint: true } },
   { name: 'prepare_job', description: 'Snapshot and inspect a sliced 3MF, or slice STL/3MF using Bambu Studio. Does not print. STL requires process and filament profile paths. Use slice:true for an unsliced 3MF.',
@@ -37,8 +39,8 @@ const tools = [
       recovery: { ...schema({ previous_job_name: { type: 'string', minLength: 1 }, bed_cleared: { type: 'boolean', const: true } }, ['previous_job_name', 'bed_cleared']),
         description: 'Only for a terminal FAILED previous job after the user confirms cleanup and requests a new print. Fresh telemetry must show idle, no active stage, no errors/HMS and heaters off. Never clears a fault or resumes the old job.' },
     }, ['job_id', 'route']), annotations: { destructiveHint: true, idempotentHint: true } },
-  { name: 'control_print', description: 'Pause or cancel the freshly identified active print, then verify its state. Optional job_id binds the target to a managed job and journals the result. confirmed:false never means paused/stopped. No automatic retry or MCP elicitation.',
-    inputSchema: schema({ route, job_id: string, action: { type: 'string', enum: ['pause', 'cancel'] } }, ['route', 'action']), annotations: { destructiveHint: true } },
+  { name: 'control_print', description: 'Explicitly pause, cancel or resume a freshly identified print, then verify its state. Resume requires managed job_id, a paused target and no printer faults or HMS warnings. Optional job_id for pause/cancel binds and journals the target. confirmed:false never establishes execution. Never resumes automatically, clears faults, retries or elicits approval.',
+    inputSchema: schema({ route, job_id: string, action: { type: 'string', enum: ['pause', 'cancel', 'resume'] } }, ['route', 'action']), annotations: { destructiveHint: true } },
 ];
 const ajv = new Ajv({ allErrors: true, strict: false });
 const validators = new Map(tools.map(tool => [tool.name, ajv.compile(tool.inputSchema)]));
@@ -59,7 +61,7 @@ function profiles(search = '') {
   for (const root of new Set(roots)) walk(root);
   return { paths: output.slice(0, 200), total: output.length, note: output.length > 200 ? 'Use a narrower search.' : undefined };
 }
-const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.3' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.4' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 async function executeTool(request) {
   const a = request.params.arguments || {};
@@ -71,6 +73,12 @@ async function executeTool(request) {
     switch (request.params.name) {
       case 'diagnose': result = await runtime.diagnose(a.connect_bridge); break;
       case 'list_printers': result = await runtime.devices(); break;
+      case 'camera_snapshot': {
+        const frame = await runtime.cameraSnapshot(a.timeout_ms);
+        return { content: [{ type: 'text', text: JSON.stringify({ status: frame.status, transport: frame.transport,
+          sizeBytes: frame.sizeBytes, capturedAt: new Date().toISOString(), note: 'Visual evidence only; printer telemetry may not detect detachment or spaghetti.' }) },
+          { type: 'image', mimeType: 'image/jpeg', data: frame.base64 }] };
+      }
       case 'printer_status': {
         if (!['lan', 'cloud'].includes(a.route)) throw new Error('route must explicitly be lan or cloud.');
         result = publicStatus(await runtime.status(a.route)); break;

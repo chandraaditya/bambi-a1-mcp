@@ -18,7 +18,7 @@ prepare never prints. print dispatches a prepared ID at most once.
 verify/watch never resubmit. watch ends on matching completion/failure or timeout.
 Files and profiles are paths on the host running the MCP. Omit --ams for one external spool.
 `;
-const client = new Client({ name: 'bambi-cli', version: '0.2.3' });
+const client = new Client({ name: 'bambi-cli', version: '0.2.4' });
 let transport, shutdown;
 const closeClient = () => shutdown ||= (async () => {
   try { await client.close(); } finally { await transport?.close(); }

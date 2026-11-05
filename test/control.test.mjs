@@ -91,3 +91,32 @@ test('managed control is serialized, refuses unsubmitted jobs and journals failu
   assert.equal(saved.confirmed, false); assert.equal(saved.error, 'control rejected');
   assert.equal(service.get(id).state, 'printing'); // No optimistic state mutation.
 });
+
+test('resume requires fault-free paused telemetry on both checks and confirms matching running readback', async () => {
+  const request = { route: 'lan', action: 'resume', expectedJob: jobName };
+  const f = fixture({ before: status('PAUSE'), dispatchState: status('PAUSE'), after: status('RUNNING') });
+  const r = await controlWithVerification(f.runtime, request);
+  assert.equal(r.status, 'observed_resumed'); assert.equal(r.confirmed, true); assert.equal(r.command, 'resume');
+  assert.equal(f.sends(), 1);
+  for (const blocked of [status('RUNNING'), status('FAILED'), status('PAUSE', { print_error: 1 }),
+    status('PAUSE', { hms: [{ code: 131073 }] }), status('PAUSE', { hms: undefined }),
+    status('PAUSE', { print_error: undefined })]) {
+    for (const phase of ['before', 'dispatchState']) {
+      const f = fixture({ before: status('PAUSE'), dispatchState: status('PAUSE'), [phase]: blocked });
+      const r = await controlWithVerification(f.runtime, request);
+      assert.equal(r.status, 'not_sent'); assert.equal(f.sends(), 0);
+    }
+  }
+  const pending = fixture({ before: status('PAUSE'), dispatchState: status('PAUSE'), after: status('PAUSE') });
+  assert.equal((await controlWithVerification(pending.runtime, request)).confirmed, false);
+});
+
+test('resume requires a managed job and refuses a different paused printer job', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bambi-resume-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const f = fixture({ before: status('PAUSE', { subtask_name: 'other' }) });
+  const service = new PrintService({ workDir: dir }, f.runtime), id = jobName.slice(6);
+  await assert.rejects(service.control({ route: 'lan', action: 'resume' }), /requires the managed job_id/);
+  fs.mkdirSync(path.join(dir, id)); service.save({ id, state: 'paused', printerJobName: jobName });
+  const r = await service.control({ route: 'lan', action: 'resume', job_id: id });
+  assert.equal(r.status, 'not_sent'); assert.equal(f.sends(), 0);
+});

@@ -6,6 +6,8 @@ An open-source MCP server for **Bambu Lab A1** printing. Slice with Bambu Studio
 
 **v0.2.1 recovery verified on hardware:** the unchanged retry was accepted after the cleared-bed acknowledgement, without rebooting or clearing faults. Independent telemetry confirmed the new job preparing. The Y-axis warning subsequently recurred while layers advanced. Remote pause attempts failed on both transports; reliable remote pause/cancel is not established. Physical completion is still pending.
 
+**v0.2.4 live check:** an approved two-part PETG plate was submitted through MCP and independently observed printing. The new read-only `camera_snapshot` tool returned live JPEGs through MCP. Explicit LAN and cloud pause tests still failed (-4 and -2); the tool reported both failures honestly, checked the still-running job and did not retry. Guarded resume is available but has not passed live acceptance because no pause was established. See [acceptance](docs/acceptance.md) for the evidence and limits. The 51 automated tests pass.
+
 No additional MCP elicitation dialog is required. Your MCP client's own tool permissions still apply. The server validates the file, model, nozzle, filament and fresh printer state before dispatch. It does not clear faults or change printer modes.
 
 ## Install
@@ -111,9 +113,11 @@ Recovery requires fresh A1 telemetry with `gcode_state: FAILED`, `print_type: id
 
 If preflight fails, the job remains prepared and `get_job` includes `last_preflight_error`. Resolve that condition and inspect fresh status before calling again. Do not invent a cleared-bed confirmation or acknowledge an active fault merely to get a submission through.
 
-### Pause and cancel outcomes
+### Pause, cancel and resume outcomes
 
 `control_print` accepts `action: "pause"` or `"cancel"`, an explicit route, and an optional managed `job_id`. Providing the job ID binds the operation to that print and records `last_control` in its durable journal. Without it, the operation targets the freshly observed named active job. Control uses the same operation lock as submission and verification, and rechecks the target inside the connected transport immediately before publishing. Active HMS warnings do not prevent an operator from pausing or stopping.
+
+`action: "resume"` requires an explicit managed `job_id`. Both fresh checks must show that exact job paused, with `print_error: 0` and an empty HMS list. Resume is an explicitly requested operation, never an automatic response to a pause or error. It does not clear faults or accept missing fault telemetry.
 
 ```json
 {"job_id":"ID_FROM_PREPARE_JOB","route":"lan","action":"pause"}
@@ -127,9 +131,9 @@ Inspect **`confirmed`**, not merely `ok` or a successful tool response:
 | `already_paused` | Fresh telemetry already showed that target paused; nothing was sent. |
 | `command_sent` | Transport accepted the command, but execution is not confirmed. |
 | `unknown` | A command was attempted and transport failed; readback did not confirm the desired state. No automatic retry occurs. |
-| `observed_paused` / `observed_terminal` | Fresh telemetry for the same job confirms the desired state. This does not establish which actor/event caused it. |
+| `observed_paused` / `observed_resumed` / `observed_terminal` | Fresh telemetry for the same job confirms the desired state. This does not establish which actor/event caused it. |
 
-The result includes before/after observations when available, transport/verification errors, and next steps. A missing or changed-job report never establishes success. If remote control cannot be confirmed, use the printer screen or Bambu Handy. **Remote pause/cancel has not passed a live acceptance test on the tested runtime.** v0.2.3 improves checks, readback and failure handling; it does not claim to fix the underlying transport rejection.
+The result includes before/after observations when available, transport/verification errors, and next steps. A missing or changed-job report never establishes success. If remote control cannot be confirmed, use the printer screen or Bambu Handy. **Remote pause/resume/cancel has not passed live acceptance on the tested runtime.** v0.2.4 adds guarded resume and camera evidence; it does not claim to fix the underlying control transport rejection.
 
 ### Bambu Studio slicing
 
@@ -158,7 +162,9 @@ npm run bambi -- watch JOB_ID --route cloud
 
 `watch` only verifies, at 30-second intervals by default; it stops on matching completion/failure or its 12-hour timeout. It never prints or retries. `status`, `job` and `doctor` are also available. Run `npm run bambi -- --help` for options.
 
-The nine MCP tools are `diagnose`, `list_printers`, `printer_status`, `list_profiles`, `prepare_job`, `get_job`, `print_job`, `verify_job` and `control_print`. Controls are pause and cancel.
+The ten MCP tools are `diagnose`, `list_printers`, `printer_status`, `camera_snapshot`, `list_profiles`, `prepare_job`, `get_job`, `print_job`, `verify_job` and `control_print`. Controls are pause, cancel and guarded resume.
+
+`camera_snapshot` returns one live JPEG as MCP image content, with an optional `timeout_ms` (1,000–30,000; default 15,000). It requires LAN camera access from the MCP host, uses the configured printer credentials, and does not change lights or move hardware. An agent can inspect this frame for bed clearance, detachment or spaghetti; the tool does not automatically classify defects or pause a print. A camera timeout is reported as an error, never as an empty or healthy bed. Use telemetry and visual evidence together: `printError: 0` does not establish physical print quality.
 
 ## Remote printing
 

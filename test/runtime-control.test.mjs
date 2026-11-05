@@ -11,7 +11,12 @@ test('cloud control waits for a fresh report and caller target check before publ
   const events = [], report = { raw: { gcode_state: 'RUNNING' } };
   t.mock.method(CloudBridge.prototype, 'connect', async () => { events.push('connect'); });
   t.mock.method(CloudBridge.prototype, 'status', async () => { events.push('fresh-status'); return report; });
-  t.mock.method(CloudBridge.prototype, 'send', async message => { assert.equal(message.print.command, 'pause'); events.push('publish'); });
+  t.mock.method(CloudBridge.prototype, 'send', async message => {
+    assert.equal(message.print.command, 'pause');
+    assert.match(message.print.sequence_id, /^\d+$/);
+    assert.ok(Number(message.print.sequence_id) > 0 && Number(message.print.sequence_id) <= 2147483647);
+    events.push('publish');
+  });
   await createRuntime(config).control('cloud', 'pause', s => { assert.equal(s, report); events.push('check'); }, () => events.push('attempt'));
   assert.deepEqual(events, ['connect', 'fresh-status', 'check', 'attempt', 'publish']);
 });
@@ -25,7 +30,11 @@ function lan(t, rejection = 0) {
   t.mock.method(BambuNetworkBridge.prototype, 'callWithAgent', async (method, payload) => {
     assert.equal(method, 'net.send_message_to_printer');
     const message = JSON.parse(payload.msg);
-    if (message.print) { events.push('publish'); return { ok: true, value: rejection }; }
+    if (message.print) {
+      assert.match(message.print.sequence_id, /^\d+$/);
+      assert.ok(Number(message.print.sequence_id) > 0 && Number(message.print.sequence_id) <= 2147483647);
+      events.push('publish'); return { ok: true, value: rejection };
+    }
     const data = message.info ? { info: { command: 'get_version', module: [] } } :
       { print: { command: 'push_status', gcode_state: 'RUNNING', print_error: 0, hms: [] } };
     queued.push({ name: 'on_local_message', payload: { dev_id: config.serial, msg: JSON.stringify(data) } });

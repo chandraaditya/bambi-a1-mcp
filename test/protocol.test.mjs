@@ -16,7 +16,12 @@ test('real stdio protocol works without elicitation and validates tool arguments
   t.after(async () => { await client.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   await client.connect(transport);
   const result = await client.listTools();
-  assert.equal(result.tools.length, 9);
+  assert.equal(result.tools.length, 10);
+  assert.equal(result.tools.find(t => t.name === 'camera_snapshot').annotations.readOnlyHint, true);
+  const badCamera = await client.callTool({ name: 'camera_snapshot', arguments: { timeout_ms: 0 } });
+  assert.equal(badCamera.isError, true); assert.match(badCamera.content[0].text, /Invalid tool arguments/);
+  const unmanagedResume = await client.callTool({ name: 'control_print', arguments: { route: 'lan', action: 'resume' } });
+  assert.equal(unmanagedResume.isError, true); assert.match(unmanagedResume.content[0].text, /requires the managed job_id/);
   const diagnosis = await client.callTool({ name: 'diagnose', arguments: {} });
   assert.equal(diagnosis.isError, undefined);
   const invalid = await client.callTool({ name: 'print_job', arguments: { job_id: 'test', route: 'unexpected' } });

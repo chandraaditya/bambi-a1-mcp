@@ -18,7 +18,8 @@ const jobIdentity = raw => JSON.stringify([previousJobName(raw), raw.task_id,
 // Pause/stop must remain available when HMS faults are present. These checks
 // identify the operation being stopped; they do not apply print-start gates.
 export async function controlWithVerification(runtime, { route, action, expectedJob }) {
-  const command = action === 'pause' ? 'pause' : 'stop';
+  const command = { pause: 'pause', cancel: 'stop', resume: 'resume' }[action];
+  if (!command) throw new Error('action must be pause, cancel or resume.');
   const result = { ok: false, status: 'not_sent', confirmed: false, command, route };
   let attempted = false, accepted = false, expected = expectedJob, identity;
   const checkTarget = status => {
@@ -29,6 +30,10 @@ export async function controlWithVerification(runtime, { route, action, expected
     if (identity && nextIdentity !== identity) throw new Error('Printer job identity changed before control dispatch; no command was sent.');
     identity ||= nextIdentity;
     if (!active(report.state)) throw new Error(`Target job is ${report.state}; no active print was identified for control.`);
+    if (action === 'resume' && (report.state !== 'PAUSE' || status.raw.print_error !== 0 ||
+        !Array.isArray(status.raw.hms) || status.raw.hms.length !== 0)) {
+      throw new Error('Resume requires a paused target with explicit zero print_error and no HMS warnings. No command was sent.');
+    }
     return report;
   };
   try {
@@ -52,11 +57,12 @@ export async function controlWithVerification(runtime, { route, action, expected
     const status = await runtime.status(route), after = observed(status);
     result.after = after;
     if (matches(after.jobName, expected) && jobIdentity(status.raw) === identity) {
-      const confirmed = action === 'pause' ? after.state === 'PAUSE' : ['FAILED', 'FINISH', 'IDLE'].includes(after.state);
-      if (confirmed) return { ...result, ok: true, status: action === 'pause' ? 'observed_paused' : 'observed_terminal', confirmed: true,
+      const confirmed = action === 'pause' ? after.state === 'PAUSE' : action === 'resume'
+        ? ['RUNNING', 'PREPARE'].includes(after.state) : ['FAILED', 'FINISH', 'IDLE'].includes(after.state);
+      if (confirmed) return { ...result, ok: true, status: { pause: 'observed_paused', resume: 'observed_resumed', cancel: 'observed_terminal' }[action], confirmed: true,
         note: 'Fresh telemetry confirms the target state. It does not prove which actor or event caused that state.' };
     }
   } catch (error) { result.verificationError = error.message; }
   return { ...result, ok: accepted, status: accepted ? 'command_sent' : 'unknown',
-    nextAction: 'Execution is not confirmed. Inspect fresh printer_status or use the printer screen; do not assume the printer paused/stopped. No automatic retry was performed.' };
+    nextAction: 'Execution is not confirmed. Inspect fresh printer_status or use the printer screen; do not assume the requested state was reached. No automatic retry was performed.' };
 }

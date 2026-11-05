@@ -1,4 +1,22 @@
-# Live acceptance — 2026-11-04
+# Live acceptance
+
+## PETG plate and camera — 2026-11-05
+
+The operator loaded external-spool PETG and explicitly requested hardware testing and printing a previously approved two-part plate. The existing sliced archive was inspected and snapshotted unchanged: A1 / 0.4 mm stainless nozzle / textured PEI, two parts, 190 layers, 2 walls, 8% gyroid, 240 C printing temperature, 80 C bed, 52.17 g and a 144-minute slicer estimate. The archive and prepared snapshot had identical SHA-256 hashes. Personal model files and hashes remain in the private job journal.
+
+Before dispatch, independent LAN and cloud telemetry agreed on a finished previous job, zero heater targets, PETG on the external spool, zero print error and no HMS warnings. A live camera frame showed the plate clear. MCP control checks refused both an unsubmitted managed job and the already finished printer job, without publishing a physical command.
+
+One `print_job` call through the real stdio MCP accepted signed LAN submission with bed leveling and flow calibration. Cloud `verify_job` independently matched the new unique job name and observed heating/preparation. No cloud print submission, fallback, second submission, printer-mode change or fault clearing occurred.
+
+The new `camera_snapshot` tool was exercised through a real MCP client and returned JPEG image content from the A1. This provides an agent with visual evidence when zero error telemetry alone cannot establish adhesion. It is not automatic spaghetti detection or automatic pausing.
+
+Independent cloud observations subsequently matched layers 1 and 2 of 190 at 240 C nozzle / 80 C bed, with zero print error and no HMS entries. MCP camera frames showed two white footprints lying on the plate and no visible spaghetti; the head and low camera angle obscure portions of the print, so this does not certify adhesion or final quality.
+
+At layer 2, the explicit LAN pause test returned plug-in code -4. Fresh matching readback still showed RUNNING. A separate cloud-route pause test returned code -2, again followed by fresh matching RUNNING telemetry. Both calls returned `isError: true`, `confirmed: false`, `status: unknown`, preserved the observed state and journaled the failure. Neither tool automatically retried. No resume was sent because a paused target was never observed. Cancellation was not tested by discarding the production print. Direct cloud print submission was not retested.
+
+Control sequence IDs were aligned with Studio's signed 32-bit integer representation before these tests. That format correction did not fix either rejection; the cause remains unresolved. Reliable pause/resume/cancel is not established, and physical print completion remains pending.
+
+## Hanger tests — 2026-11-04
 
 **First test outcome: unsuccessful physical print.** The user reported that parts shifted and came off the plate, followed by spaghetti extrusion, and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The user observation establishes detachment from the plate; why the parts detached is not established, and the Y-axis HMS warning is not by itself proof of its cause. The failure report itself did not authorize a retry; a later explicit user request did, as recorded below.
 
