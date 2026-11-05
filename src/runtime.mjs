@@ -8,11 +8,12 @@ import { validatePrinterState } from './vendor/printer-state.mjs';
 import { credentials } from './config.mjs';
 import { freshMqttStatus, withLanMqtt } from './telemetry.mjs';
 import { CloudBridge, freshBridgeStatus, checked } from './cloud-bridge.mjs';
+import { ensureLanControlReady } from './lan-control-readiness.mjs';
 
-// Studio sends decimal int sequence IDs for print controls. Millisecond Unix
-// timestamps exceed that range; keep control IDs within signed 32-bit bounds.
-let controlSequence = randomInt(10000, 1000000);
-const nextControlSequence = () => String(controlSequence = controlSequence >= 2147483647 ? 1 : controlSequence + 1);
+// Studio's command window is [20000, 30000). This A1 rejected an otherwise
+// identical read-only query at 500004 (84033546), but accepted 24008.
+let controlSequence = randomInt(20000, 30000);
+const nextControlSequence = () => String(controlSequence = controlSequence >= 29999 ? 20000 : controlSequence + 1);
 
 function tcpProbe(host, port) {
   return new Promise(resolve => {
@@ -111,8 +112,13 @@ export function createRuntime(config) {
         return { status: 'command_sent', command, route, note: 'Read printer_status to confirm execution.' };
       }
       const options = bridgeOptions();
+      // Certificate notifications can arrive on the cloud-message callback
+      // even during a LAN-only session.
+      checked(await bridge.callWithAgent('net.set_on_message_fn', {}, options), 'LAN certificate callback');
       return bridge.withLocalSession({ devId: config.serial, devIp: config.host, username: 'bblp', password: config.accessCode, useSsl: true },
-        options, () => {}, { connectTimeoutMs: 30000, pollMs: 250, settleMs: 3000, retryWaitMs: 8000 }, async () => {
+        options, () => {}, { connectTimeoutMs: 30000, pollMs: 250, settleMs: 3000, retryWaitMs: 8000 }, async session => {
+          await beforeDispatch(await localStatus());
+          await ensureLanControlReady({ bridge, config, options, session, nextSequence: nextControlSequence });
           await beforeDispatch(await localStatus());
           onDispatch();
           const result = await bridge.callWithAgent('net.send_message_to_printer', { dev_id: config.serial,

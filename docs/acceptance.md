@@ -24,6 +24,18 @@ Independent cloud verification subsequently matched layer 20 of 190, approximate
 
 Primary reference: [Bambu Studio calibration-result query](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceManager.cpp).
 
+### LAN pause and resume verified after readiness correction
+
+Further read-only probes isolated two reproducible differences. After an initial query returned -4, waiting for the vendor certificate exchange, reinstalling/updating the device certificate and waiting for `device_cert_installed` allowed the next query to publish successfully. A same-session comparison then returned error 84033546 for sequence ID 500004, while the identical query with ID 24008 returned `result: success`. Bambu Studio defines its command sequence window as 20000 through 29999. This is evidence for using that range on this A1; it is not a claim that every printer rejects all other values.
+
+The runtime now uses that sequence window, registers the certificate message callback and proves LAN command readiness with the read-only `extrusion_cali_get_result` query. A bounded certificate-bootstrap recovery may repeat that query once, never the physical command. Readiness requires a successful reply matched by printer, command and sequence ID; socket connection or publication success alone is insufficient. The exact active job is checked both before and after readiness. Any readiness failure returns `not_sent`, with `dispatchAttempted: false`.
+
+A real stdio MCP `control_print` call subsequently paused the managed PETG job at layer 44: publication succeeded and fresh readback confirmed the exact job in `PAUSE`, with zero print error and no HMS entries. A separately requested guarded resume then succeeded and fresh readback confirmed the same job `RUNNING`, nozzle target restored to 240 C, bed target 80 C, zero print error and no HMS entries. Exactly one physical pause and one resume were sent for this successful test. The earlier readiness-guard failure sent neither. No cancellation, duplicate print, fault clear or printer-mode change was performed.
+
+All 57 automated tests pass, including failed readiness, stale/wrong query replies, job changes during readiness, and no retry after physical-command rejection. Cloud control remains unresolved. Cancellation was not tested by discarding the production print. Completed-part quality remains unverified.
+
+Primary references: [Studio sequence window](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceCore/DevUtil.h), [read-only query payload](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceManager.cpp).
+
 ## Hanger tests — 2026-11-04
 
 **First test outcome: unsuccessful physical print.** The user reported that parts shifted and came off the plate, followed by spaghetti extrusion, and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The user observation establishes detachment from the plate; why the parts detached is not established, and the Y-axis HMS warning is not by itself proof of its cause. The failure report itself did not authorize a retry; a later explicit user request did, as recorded below.
