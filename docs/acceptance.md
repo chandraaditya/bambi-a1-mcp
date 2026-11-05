@@ -16,6 +16,14 @@ At layer 2, the explicit LAN pause test returned plug-in code -4. Fresh matching
 
 Control sequence IDs were aligned with Studio's signed 32-bit integer representation before these tests. That format correction did not fix either rejection; the cause remains unresolved. Reliable pause/resume/cancel is not established, and physical print completion remains pending.
 
+### Read-only control diagnosis
+
+A subsequent LAN probe added the cloud-message callback and allowed an additional ten seconds of event settling. It observed a successful local connection and fresh advancing print telemetry. A single read-only `extrusion_cali_get_result` request, using the payload shape from Bambu Studio and a numeric sequence ID of 24001, returned the same -4 code. No pause, resume, cancel, calibration start, setting change or print submission was sent during this probe. This establishes that the observed send failure is not specific to pause; it does not identify the root cause or prove a certificate/signing failure. No certificate-ready event was observed, which alone is not proof that certificate setup failed.
+
+Independent cloud verification subsequently matched layer 20 of 190, approximately 115 minutes remaining, 240 C nozzle / 80 C bed, zero print error and no HMS entries. Completion and finished-part quality remain unverified.
+
+Primary reference: [Bambu Studio calibration-result query](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceManager.cpp).
+
 ## Hanger tests — 2026-11-04
 
 **First test outcome: unsuccessful physical print.** The user reported that parts shifted and came off the plate, followed by spaghetti extrusion, and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The user observation establishes detachment from the plate; why the parts detached is not established, and the Y-axis HMS warning is not by itself proof of its cause. The failure report itself did not authorize a retry; a later explicit user request did, as recorded below.
