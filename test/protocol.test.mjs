@@ -15,6 +15,7 @@ test('real stdio protocol works without elicitation and validates tool arguments
     args: [path.resolve('src/server.mjs')], env: { ...process.env, BAMBI_CONFIG: config }, stderr: 'pipe' });
   t.after(async () => { await client.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   await client.connect(transport);
+  assert.equal(client.getServerVersion().version, JSON.parse(fs.readFileSync('package.json', 'utf8')).version);
   const result = await client.listTools();
   assert.equal(result.tools.length, 10);
   assert.equal(result.tools.find(t => t.name === 'camera_snapshot').annotations.readOnlyHint, true);

@@ -8,6 +8,7 @@ import { PrintService } from './service.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import Ajv from 'ajv';
+import packageInfo from '../package.json' with { type: 'json' };
 
 // Reserve stdout for JSON-RPC even if a library logs during slicing.
 console.log = (...args) => console.error(...args);
@@ -61,7 +62,7 @@ function profiles(search = '') {
   for (const root of new Set(roots)) walk(root);
   return { paths: output.slice(0, 200), total: output.length, note: output.length > 200 ? 'Use a narrower search.' : undefined };
 }
-const server = new Server({ name: 'bambi-a1-mcp', version: '0.2.4' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'bambi-a1-mcp', version: packageInfo.version }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 async function executeTool(request) {
   const a = request.params.arguments || {};

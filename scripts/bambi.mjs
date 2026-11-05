@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import packageInfo from '../package.json' with { type: 'json' };
 
 const help = `Bambi A1 — uses the same MCP tools as your agent; no additional approval UI.
 
@@ -18,7 +19,7 @@ prepare never prints. print dispatches a prepared ID at most once.
 verify/watch never resubmit. watch ends on matching completion/failure or timeout.
 Files and profiles are paths on the host running the MCP. Omit --ams for one external spool.
 `;
-const client = new Client({ name: 'bambi-cli', version: '0.2.4' });
+const client = new Client({ name: 'bambi-cli', version: packageInfo.version });
 let transport, shutdown;
 const closeClient = () => shutdown ||= (async () => {
   try { await client.close(); } finally { await transport?.close(); }
