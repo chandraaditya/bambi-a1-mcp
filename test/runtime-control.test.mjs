@@ -5,10 +5,24 @@ import { CloudBridge } from '../src/cloud-bridge.mjs';
 import { createRuntime } from '../src/runtime.mjs';
 
 const config = { serial: '039TEST', host: 'printer.invalid', accessCode: 'fixture-code',
-  bridgeCommand: 'unused-in-this-test', bridgeConfigDir: '/unused-test-directory', country: 'US' };
+  bridgeCommand: 'unused-in-this-test', bridgeConfigDir: '/unused-test-directory', cloudCredentialsFile: '/unused-test-directory/cloud.json', country: 'US' };
 
-test('cloud control waits for a fresh report and caller target check before publishing', async t => {
+function cloud(t, readyCode = 0) {
   const events = [], report = { raw: { gcode_state: 'RUNNING' } };
+  const queued = [];
+  t.mock.method(BambuNetworkBridge.prototype, 'callWithAgent', async (method, payload) => {
+    assert.equal(method, 'net.send_message');
+    const message = JSON.parse(payload.msg);
+    assert.equal(message.print.command, 'extrusion_cali_get_result');
+    events.push('ready-query');
+    if (readyCode) return { ok: true, value: readyCode };
+    queued.push({ name: 'on_message', payload: { dev_id: config.serial,
+      msg: JSON.stringify({ print: { ...message.print, result: 'success' } }) } });
+    return { ok: true, value: 0 };
+  });
+  t.mock.method(BambuNetworkBridge.prototype, 'request', async method => {
+    assert.equal(method, 'bridge.poll_events'); return { events: queued.splice(0) };
+  });
   t.mock.method(CloudBridge.prototype, 'connect', async () => { events.push('connect'); });
   t.mock.method(CloudBridge.prototype, 'status', async () => { events.push('fresh-status'); return report; });
   t.mock.method(CloudBridge.prototype, 'send', async message => {
@@ -17,8 +31,28 @@ test('cloud control waits for a fresh report and caller target check before publ
     assert.ok(Number(message.print.sequence_id) >= 20000 && Number(message.print.sequence_id) < 30000);
     events.push('publish');
   });
+  return { events, report };
+}
+
+test('cloud control waits for readiness and a final fresh target check before publishing', async t => {
+  const { events, report } = cloud(t);
   await createRuntime(config).control('cloud', 'pause', s => { assert.equal(s, report); events.push('check'); }, () => events.push('attempt'));
-  assert.deepEqual(events, ['connect', 'fresh-status', 'check', 'attempt', 'publish']);
+  assert.deepEqual(events, ['connect', 'fresh-status', 'check', 'ready-query', 'fresh-status', 'check', 'attempt', 'publish']);
+});
+
+test('cloud control sends nothing when the target changes after readiness', async t => {
+  const { events } = cloud(t); let checks = 0;
+  await assert.rejects(createRuntime(config).control('cloud', 'pause', () => {
+    events.push('check'); if (++checks === 2) throw new Error('target changed');
+  }, () => events.push('attempt')), /target changed/);
+  assert.ok(!events.includes('attempt') && !events.includes('publish'));
+});
+
+test('failed cloud readiness never publishes a physical control', async t => {
+  const { events } = cloud(t, -11);
+  await assert.rejects(createRuntime(config).control('cloud', 'pause', () => events.push('check'),
+    () => events.push('attempt')), /Cloud control readiness query failed.*No control command was sent/);
+  assert.deepEqual(events, ['connect', 'fresh-status', 'check', 'ready-query']);
 });
 
 function lan(t, rejection = 0, readyCode = 0) {
@@ -80,4 +114,13 @@ test('failed LAN readiness never marks a physical dispatch attempted or publishe
   await assert.rejects(createRuntime(config).control('lan', 'pause', () => events.push('check'),
     () => events.push('attempt')), /readiness query failed \(code -2\).*No control command was sent/);
   assert.deepEqual(events, ['check', 'ready-query']);
+});
+
+test('a LAN control session invalidates cached cloud readiness even when the target check refuses', async t => {
+  lan(t); let invalidations = 0;
+  t.mock.method(CloudBridge.prototype, 'invalidate', () => { invalidations++; });
+  await assert.rejects(createRuntime(config).control('lan', 'pause', () => {
+    throw new Error('target changed');
+  }, () => assert.fail('must not dispatch')), /target changed/);
+  assert.equal(invalidations, 1);
 });

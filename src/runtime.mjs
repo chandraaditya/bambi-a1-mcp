@@ -8,7 +8,7 @@ import { validatePrinterState } from './vendor/printer-state.mjs';
 import { credentials } from './config.mjs';
 import { freshMqttStatus, withLanMqtt } from './telemetry.mjs';
 import { CloudBridge, freshBridgeStatus, checked } from './cloud-bridge.mjs';
-import { ensureLanControlReady } from './lan-control-readiness.mjs';
+import { ensureControlReady } from './control-readiness.mjs';
 
 // Studio's command window is [20000, 30000). This A1 rejected an otherwise
 // identical read-only query at 500004 (84033546), but accepted 24008.
@@ -62,6 +62,7 @@ export function createRuntime(config) {
     async status(route) {
       if (route === 'cloud') return cloud.status();
       if (config.lanTelemetry === 'mqtt') return withLanMqtt(config, client => freshMqttStatus(client, config));
+      cloud.invalidate();
       return bridge.withLocalSession(localPrinter(), bridgeOptions(), () => {}, localTiming, localStatus);
     },
     async devices() {
@@ -96,6 +97,7 @@ export function createRuntime(config) {
         return { ...result, diagnostics: (events?.events || []).filter(event =>
           event.name === 'job.update_status' && event.payload?.job_id === clientJobId).map(event => event.payload) };
       }
+      cloud.invalidate();
       const result = await bridge.startLocalPrint(localPrinter(), 'net.start_local_print',
       { client_job_id: Date.now(), params }, { ...bridgeOptions(),
         beforeDispatch: async method => { if (method === 'net.start_local_print') await beforeDispatch(await localStatus()); },
@@ -107,18 +109,21 @@ export function createRuntime(config) {
       if (route === 'cloud') {
         await cloud.connect();
         await beforeDispatch(await cloud.status());
+        await ensureControlReady({ route: 'cloud', bridge, config, options: cloudOptions(), nextSequence: nextControlSequence });
+        await beforeDispatch(await cloud.status());
         onDispatch();
         await cloud.send({ print: { command, sequence_id: nextControlSequence(), param: '' } });
         return { status: 'command_sent', command, route, note: 'Read printer_status to confirm execution.' };
       }
       const options = bridgeOptions();
+      cloud.invalidate();
       // Certificate notifications can arrive on the cloud-message callback
       // even during a LAN-only session.
       checked(await bridge.callWithAgent('net.set_on_message_fn', {}, options), 'LAN certificate callback');
       return bridge.withLocalSession({ devId: config.serial, devIp: config.host, username: 'bblp', password: config.accessCode, useSsl: true },
         options, () => {}, { connectTimeoutMs: 30000, pollMs: 250, settleMs: 3000, retryWaitMs: 8000 }, async session => {
           await beforeDispatch(await localStatus());
-          await ensureLanControlReady({ bridge, config, options, session, nextSequence: nextControlSequence });
+          await ensureControlReady({ route: 'lan', bridge, config, options, session, nextSequence: nextControlSequence });
           await beforeDispatch(await localStatus());
           onDispatch();
           const result = await bridge.callWithAgent('net.send_message_to_printer', { dev_id: config.serial,

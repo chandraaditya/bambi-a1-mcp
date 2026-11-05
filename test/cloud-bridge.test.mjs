@@ -42,6 +42,18 @@ test('cloud bridge refuses an unauthenticated session', async () => {
   await assert.rejects(cloud.connect(), /login is missing/);
 });
 
+test('invalidating a shared LAN session forces cloud reselection before fresh telemetry', async () => {
+  const { cloud, calls } = fixture();
+  await cloud.connect(); await cloud.connect();
+  assert.equal(calls.filter(([method]) => method === 'net.add_subscribe').length, 1);
+  cloud.invalidate();
+  const status = await cloud.status(100);
+  assert.equal(status.raw.gcode_state, 'IDLE');
+  assert.equal(calls.filter(([method]) => method === 'net.add_subscribe').length, 2);
+  const methods = calls.map(([method]) => method);
+  assert.ok(methods.lastIndexOf('net.set_user_selected_machine') < methods.indexOf('net.send_message'));
+});
+
 test('queued reports are cleared before requesting status', async () => {
   const { cloud, queue, bridge } = fixture();
   await cloud.connect();

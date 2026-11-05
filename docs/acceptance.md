@@ -36,6 +36,16 @@ All 57 automated tests pass, including failed readiness, stale/wrong query repli
 
 Primary references: [Studio sequence window](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceCore/DevUtil.h), [read-only query payload](https://github.com/bambulab/BambuStudio/blob/master/src/slic3r/GUI/DeviceManager.cpp).
 
+### Cloud readiness and mixed-route status — v0.2.5
+
+A cloud-only read-only probe started with fresh matching PETG telemetry at layer 52. The initial `extrusion_cali_get_result` send returned -2 even though the cloud socket reported connected. After the normal vendor certificate update and cloud device-certificate installation (`lan_only: false`), the probe observed `device_cert_installed`. A second read-only query published successfully and received a matching successful response on `on_message`. No LAN printer connection or physical print control was used in this probe.
+
+The production readiness helper was then exercised against the same cloud route. It completed successfully in about 20 seconds including the initial status read, and fresh follow-up telemetry still matched the RUNNING job at layer 58, with zero print error and no HMS entries. Cloud control now uses that helper and rechecks the job afterward. Tests verify no physical publication on readiness failure or a changed target, and no fallback to LAN. This establishes the read-only readiness path, not live cloud pause/resume/cancel acceptance; those physical operations were not repeated during this work.
+
+A separate real stdio MCP session reproduced a mixed-route failure: cloud verification succeeded, LAN verification succeeded, then cloud verification returned -2. The runtime now invalidates its cached cloud subscription before a bridge LAN session; the next cloud request reselects/subscribes even if the cloud socket remains connected. The same cloud → LAN → cloud sequence then succeeded in one MCP connection, each matching the active job at layer 63 without print errors or HMS warnings. This fixes the reproduced route-switch case, not every possible network interruption.
+
+All 63 automated tests pass. Direct cloud task creation was not retried, no duplicate print was submitted, and no physical controls were sent during these cloud and route-switch probes. Print completion and final part quality remain pending.
+
 ## Hanger tests — 2026-11-04
 
 **First test outcome: unsuccessful physical print.** The user reported that parts shifted and came off the plate, followed by spaghetti extrusion, and stopped the job at layer 33. Matching fresh telemetry confirmed `FAILED`, nozzle/bed targets zero. A fresh post-stop camera image could not be obtained: direct camera requests timed out and the Studio UI was unavailable. The user observation establishes detachment from the plate; why the parts detached is not established, and the Y-axis HMS warning is not by itself proof of its cause. The failure report itself did not authorize a retry; a later explicit user request did, as recorded below.

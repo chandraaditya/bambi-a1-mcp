@@ -6,6 +6,10 @@ export function checked(response, method) {
 
 export class CloudBridge {
   constructor(bridge, config, options) { this.bridge = bridge; this.config = config; this.options = options; this.subscribed = false; }
+  // A LAN session reuses the vendor agent and changes its selected channel.
+  // Re-select and subscribe before the next cloud request, even if the cloud
+  // socket still reports connected.
+  invalidate() { this.subscribed = false; }
   async call(method, payload = {}) { return this.bridge.callWithAgent(method, payload, this.options()); }
   async devices() {
     const response = await this.call('net.get_user_print_info');
