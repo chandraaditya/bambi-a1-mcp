@@ -98,12 +98,18 @@ export function createRuntime(config) {
           event.name === 'job.update_status' && event.payload?.job_id === clientJobId).map(event => event.payload) };
       }
       cloud.invalidate();
-      const result = await bridge.startLocalPrint(localPrinter(), 'net.start_local_print',
-      { client_job_id: Date.now(), params }, { ...bridgeOptions(),
+      const options = { ...bridgeOptions(),
         beforeDispatch: async method => { if (method === 'net.start_local_print') await beforeDispatch(await localStatus()); },
         onDispatched: method => { if (method === 'net.start_local_print') onDispatched(); },
-      }, () => {}, localTiming);
-      return { ...result.result, diagnostics: result.jobUpdates };
+      };
+      // startLocalPrint retries -4030 internally. A plug-in rejection is not
+      // independent proof that the printer received nothing: publish once and
+      // let the durable job journal require inspection of any uncertain result.
+      return bridge.withLocalSession(localPrinter(), options, () => {}, localTiming, async session => {
+        const result = await bridge.callWithAgent('net.start_local_print',
+          { client_job_id: Date.now(), params }, options);
+        return { ...result, diagnostics: session.jobUpdates };
+      });
     },
     async control(route, command, beforeDispatch, onDispatch) {
       if (route === 'cloud') {

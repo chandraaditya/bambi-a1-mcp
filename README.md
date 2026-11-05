@@ -12,6 +12,8 @@ An open-source MCP server for **Bambu Lab A1** printing. Slice with Bambu Studio
 
 No additional MCP elicitation dialog is required. Your MCP client's own tool permissions still apply. The server validates the file, model, nozzle, filament and fresh printer state before dispatch. It does not clear faults or change printer modes.
 
+**v0.2.6 monitoring:** the CLI watcher now emits important events instead of a full status report every minute. Normal progress stays quiet; optional milestones provide at most five intermediate updates. `--until-event` lets a host wait for background-task completion on an issue or print completion. LAN submission also bypasses the dependency's automatic `-4030` retry: one attempted submission stays one attempt.
+
 ## Install
 
 Requires **Node.js 24+**, **Docker**, **Bambu Studio**, `tar` and `unzip`. The tested host is macOS with Docker's Linux/amd64 support. Linux x86-64 is supported by the wrapper but has not received the same physical acceptance test. Windows users must run inside WSL2. Other Bambu models are not supported by this release.
@@ -162,7 +164,19 @@ npm run bambi -- verify JOB_ID --route cloud
 npm run bambi -- watch JOB_ID --route cloud
 ```
 
-`watch` only verifies, at 30-second intervals by default; it stops on matching completion/failure or its 12-hour timeout. It never prints or retries. `status`, `job` and `doctor` are also available. Run `npm run bambi -- --help` for options.
+`watch` polls through MCP in a local process every 60 seconds by default, without calling an LLM. It emits JSONL events at startup, on a new issue, when an issue clears, and on matching completion/failure. Changing ETA or layer count does not produce output. Repeated identical HMS warnings are suppressed. Observation failures produce one alert per outage; the process retries only status reads with bounded backoff, then reports recovery. It never prints, pauses, resumes or cancels.
+
+For an agent host that wakes on background-task completion:
+
+```sh
+bambi watch JOB_ID --route cloud --until-event
+```
+
+Start that command **once as a background task**, then let the host wait for it. It exits on matching completion (0), a printer issue or failed print (2), or an observation failure/timeout/unsubmitted job (1). Inspect its final event before acting; an observation failure does not mean the print failed. An issue exit stops monitoring, so explicitly restart a read-only watch after handling the event. Do not schedule an LLM turn every minute to inspect the process or log.
+
+Without `--until-event`, the watcher continues through issues and observation outages until matching completion/failure or its 12-hour timeout. `--notify milestones` adds at most five intermediate progress events; `--notify all` emits every observation for diagnostics. Output is an event envelope with `event`, `job_id`, `state` and `observation`, rather than the pre-0.2.6 full job dump. Latest detailed progress remains available through `get_job`/`verify_job`.
+
+The watcher itself does not invoke an LLM or configure wakeups. Host background-task support is required for an automatic agent wake; an independently active harness goal may still continue on its own. Neither a quiet watch nor a long remaining-time estimate proves physical print quality: camera inspection and operator feedback are separate. `status`, `job` and `doctor` are also available. Run `npm run bambi -- --help` for options.
 
 The ten MCP tools are `diagnose`, `list_printers`, `printer_status`, `camera_snapshot`, `list_profiles`, `prepare_job`, `get_job`, `print_job`, `verify_job` and `control_print`. Controls are pause, cancel and guarded resume.
 
@@ -191,7 +205,7 @@ The Docker runtime is x86-64. A Raspberry Pi requires a separately configured co
 - Job files, credentials, encrypted sessions and diagnostics live outside the package in private directories.
 - Durable job records and a shared-directory operation lock prevent duplicate dispatch by this server across repeats/restarts. This is not a printer-wide lock across other slicers.
 - A timeout after dispatch is recorded as `unknown`, never automatically retried. `verify_job` can resolve it from a matching live job.
-- The networking library can retry its specific local **publish-failed** error once, with a fresh preflight. There is no generic print retry or automatic transport fallback.
+- Each print call publishes at most once, including the local **publish-failed** error (`-4030`). The runtime avoids the dependency's automatic print-retry wrapper. Inspect an uncertain outcome before explicitly preparing another job; there is no automatic transport fallback.
 - Faults are reported, not cleared. A crash can leave a lock; inspect the live printer and process before removing it.
 - The live test reached layer 33, then the user stopped it after observing a physical failure. It did not produce a completed acceptable part. The printer raised a Y-axis resonance/possible loose-belt HMS entry during preparation; this was surfaced and left intact.
 - LAN reachability was intermittent during the live test: after printing started, new connections to port 8883 timed out from both macOS and Docker while FTPS 990 remained reachable. Cloud monitoring continued. `diagnose` with `connect_bridge: true` reports separate host TCP probes; a reachable port alone does not prove protocol authorization. This network/firmware cause remains unresolved.
